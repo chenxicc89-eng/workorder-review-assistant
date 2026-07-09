@@ -6,17 +6,14 @@
 // pdfjs 仅在选到 PDF 时才加载,不进入主包关键路径。
 // ==========================================================================
 
-// 首选压缩参数:分辨率与质量都放高,尽量保留清晰度,识别更准。
-// 工单/手写扫描件文字较多,提高分辨率有助于识别。
-const MAX_EDGE = 2400; // 最长边像素上限
-const JPEG_QUALITY = 0.85;
+// 首选压缩参数:手机拍照原图通常很大,视觉模型处理耗时会明显增加。
+// 这里保留工单文字识别所需清晰度,同时控制请求体和模型推理时长。
+const MAX_EDGE = 1600; // 最长边像素上限
+const JPEG_QUALITY = 0.75;
 
-// 单张图片编码后(base64 data URL)的体积上限 —— 放到尽可能大。
-// 唯一的硬约束来自部署平台:Vercel serverless 请求体约 4.5MB 且无法调大。
-// 为在“一次多张”时也不触发该上限,单张压到 ~3.8MB 以内(单张场景足够宽松;
-// 若一次要传多张大图,后端已就 413 给出可读提示,可减少数量重试)。
-// 自托管/本地部署无此平台上限,后端 express.json 已放开到 50mb。
-const MAX_ENCODED_BYTES = 3.8 * 1024 * 1024;
+// 单张图片编码后(base64 data URL)的体积上限。Vercel 请求体有平台级硬上限,
+// 更关键的是视觉模型在 serverless 60s 内要完成推理;手机照片过大会导致 504。
+const MAX_ENCODED_BYTES = 1.4 * 1024 * 1024;
 
 /** 估算 data URL 的字节数(base64 部分每 4 字符 ≈ 3 字节) */
 function dataUrlBytes(dataUrl: string): number {
@@ -74,14 +71,14 @@ async function compressDataUrl(dataUrl: string): Promise<string> {
   let out = encodeAtEdge(img, MAX_EDGE, JPEG_QUALITY, dataUrl);
   if (dataUrlBytes(out) <= MAX_ENCODED_BYTES) return out;
 
-  // 第一轮:保持高分辨率,逐步降质量
-  for (const q of [0.75, 0.65, 0.55]) {
+  // 第一轮:保持分辨率,逐步降质量
+  for (const q of [0.68, 0.6, 0.52]) {
     out = encodeAtEdge(img, MAX_EDGE, q, out);
     if (dataUrlBytes(out) <= MAX_ENCODED_BYTES) return out;
   }
-  // 第二轮:仍超标则同时缩小最长边(文字件降到 1600 / 1280 / 1024 仍可识别)
-  for (const edge of [1600, 1280, 1024]) {
-    out = encodeAtEdge(img, edge, 0.6, out);
+  // 第二轮:仍超标则同时缩小最长边(文字件降到 1280 / 1024 仍可识别)
+  for (const edge of [1280, 1024]) {
+    out = encodeAtEdge(img, edge, 0.58, out);
     if (dataUrlBytes(out) <= MAX_ENCODED_BYTES) return out;
   }
   // 已尽力压缩,返回当前最小的一版(极端情况下仍可能偏大,交由后端给出可读提示)

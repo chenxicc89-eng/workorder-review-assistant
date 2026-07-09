@@ -30,8 +30,8 @@ interface Props {
 
 const MAX_IMAGES = 6;
 const MAX_DOCS = 8;
-// 单次图片请求体上限(适配 Vercel Serverless ~4.5MB;留余量取 3.8MB)
-const MAX_IMAGE_PAYLOAD = 3.8 * 1024 * 1024;
+// 单张图片请求体上限。手机照片过大时视觉模型容易超过 serverless 时限导致 504。
+const MAX_IMAGE_PAYLOAD = 1.8 * 1024 * 1024;
 
 /** 估算 data URL 数组作为 JSON body 的字节体积 */
 function estimatePayload(dataUrls: string[]): number {
@@ -132,12 +132,13 @@ export function OcrUploader({ onExtracted, visionAvailable = true, visionHint }:
         if (!visionAvailable) {
           toast("图片识别不可用,已跳过图片,仅识别 Word/Excel", "info");
         } else {
-          const dataUrls = images.map((im) => im.dataUrl);
-          if (estimatePayload(dataUrls) > MAX_IMAGE_PAYLOAD) {
-            toast("图片总体积偏大,请减少张数或分批识别(单次上限约 3.8MB)", "error");
-            return;
+          for (const im of images) {
+            if (estimatePayload([im.dataUrl]) > MAX_IMAGE_PAYLOAD) {
+              toast(`图片 ${im.name} 体积偏大,请裁剪或重新拍摄后重试`, "error");
+              return;
+            }
+            results.push(await extractFromImages([im.dataUrl]));
           }
-          results.push(await extractFromImages(dataUrls));
         }
       }
 
