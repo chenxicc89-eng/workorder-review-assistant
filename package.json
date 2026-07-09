@@ -4,6 +4,9 @@
   "description": "12345回单智能预审助手 - 单条工单回单预审工具",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "concurrently -n server,client -c cyan,green \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite",
@@ -11,7 +14,6 @@
     "build": "prisma generate && tsc -b && vite build",
     "preview": "vite preview",
     "start": "tsx src/server/index.ts",
-    "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
