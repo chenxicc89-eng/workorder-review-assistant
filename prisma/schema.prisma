@@ -8,6 +8,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // 本机开发用 native;Vercel serverless 运行在 Amazon Linux 2023(OpenSSL 3.0),
+  // 必须显式声明 rhel-openssl-3.0.x,否则运行时找不到查询引擎 → 整个函数冷启动即崩溃,
+  // 表现为所有 /api/* 全部 500(含 /api/health)。
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
