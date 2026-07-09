@@ -1,11 +1,13 @@
-// 把 Vercel Serverless Function 入口 api/_app.ts 及其整个 src/ 依赖图,
-// 用 esbuild 打包成自包含的单文件 api/index.mjs。
+// 把打包入口 api/_bundle_entry.ts 及其整个 src/ 依赖图,
+// 用 esbuild 打包成自包含的单文件 api/_bundle.mjs。
+// 真正的函数是 api/index.ts,它用【带扩展名】的 import 引用本产物。
 //
 // 为什么需要:项目是 "type":"module"(纯 ESM),而 src/server、src/lib 下大量
 // 相对 import 省略了 .js 扩展名(bundler 风格)。Vercel 的 @vercel/node 在 ESM 下
 // 会把这些无扩展名 import 原样保留到运行时,Node 无法解析 → ERR_MODULE_NOT_FOUND
 // → 函数冷启动即崩溃,所有 /api/* 返回 500(含 /api/health)。
-// 预打包后函数不再有任何未解析的相对 import,从根本上消除该问题。
+// 预打包后 _bundle.mjs 内部不再有任何未解析的相对 import,从根本上消除该问题;
+// api/index.ts → ./_bundle.mjs 是唯一的相对 import,且带扩展名,ESM 运行时可正常解析。
 //
 // external:
 //   @prisma/client —— Prisma 运行时按文件系统就近查找原生查询引擎
@@ -15,8 +17,8 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["api/_app.ts"],
-  outfile: "api/index.mjs",
+  entryPoints: ["api/_bundle_entry.ts"],
+  outfile: "api/_bundle.mjs",
   bundle: true,
   platform: "node",
   format: "esm",
@@ -30,4 +32,4 @@ await build({
   logLevel: "info",
 });
 
-console.log("✅ api/index.mjs 打包完成");
+console.log("✅ api/_bundle.mjs 打包完成");

@@ -5,7 +5,7 @@ dist
 *.tsbuildinfo
 
 # 构建产物:由 scripts/build-api.mjs 打包生成,Vercel 每次构建时重新生成
-api/index.mjs
+api/_bundle.mjs
 
 # Prisma / SQLite
 prisma/dev.db
