@@ -83,18 +83,22 @@ export function ReviewPage() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <div className="lg:sticky lg:top-[4.5rem] lg:self-start">
+      {/* min-w-0:grid item 默认 min-width:auto,会被内部宽内容(如问题明细表)撑破,
+          导致移动端整页横向溢出。设 min-w-0 让其遵循列宽,表格改为在自身容器内横向滚动。 */}
+      <div className="min-w-0 lg:sticky lg:top-[4.5rem] lg:self-start">
         <WorkOrderForm value={input} onChange={setInput} onSubmit={runReview} loading={loading} />
       </div>
-      <ReviewResultPanel
-        result={result}
-        loading={loading}
-        error={error}
-        onSave={handleSave}
-        onMarkFalsePositive={handleMarkFalsePositive}
-        onReReview={runReview}
-        saving={saving}
-      />
+      <div className="min-w-0">
+        <ReviewResultPanel
+          result={result}
+          loading={loading}
+          error={error}
+          onSave={handleSave}
+          onMarkFalsePositive={handleMarkFalsePositive}
+          onReReview={runReview}
+          saving={saving}
+        />
+      </div>
     </div>
   );
 }
