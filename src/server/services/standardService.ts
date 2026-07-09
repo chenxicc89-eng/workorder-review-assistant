@@ -1,0 +1,123 @@
+import { prisma } from "../db";
+import type { RuleStandard } from "../../lib/types";
+import { getDefaultStandard, DEFAULT_STANDARDS } from "../../lib/standards/defaultStandards";
+
+// ==========================================================================
+// 规范库服务
+// --------------------------------------------------------------------------
+// StandardRule 表中 contentJson 存完整 RuleStandard。
+// 读出时以 contentJson 为准,并用行的 id/orderType/name/enabled 校正。
+// ==========================================================================
+
+export interface StandardRow {
+  id: string;
+  orderType: string;
+  name: string;
+  enabled: boolean;
+  standard: RuleStandard;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToStandard(row: {
+  id: string;
+  orderType: string;
+  name: string;
+  contentJson: string;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): StandardRow {
+  let parsed: RuleStandard;
+  try {
+    parsed = JSON.parse(row.contentJson);
+  } catch {
+    parsed = getDefaultStandard(row.orderType);
+  }
+  // 以行字段为准校正
+  const standard: RuleStandard = { ...parsed, id: row.id, orderType: row.orderType, name: row.name };
+  return {
+    id: row.id,
+    orderType: row.orderType,
+    name: row.name,
+    enabled: row.enabled,
+    standard,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** 列出全部规范(可按类型过滤) */
+export async function listStandards(orderType?: string): Promise<StandardRow[]> {
+  const rows = await prisma.standardRule.findMany({
+    where: orderType ? { orderType } : undefined,
+    orderBy: { orderType: "asc" },
+  });
+  return rows.map(rowToStandard);
+}
+
+/**
+ * 取某工单类型当前生效的规范(供审核使用)。
+ * 优先取数据库中 enabled 的记录;数据库无记录时回退内置默认。
+ */
+export async function getActiveStandard(orderType: string): Promise<RuleStandard> {
+  const row = await prisma.standardRule.findFirst({
+    where: { orderType, enabled: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (row) return rowToStandard(row).standard;
+  return getDefaultStandard(orderType);
+}
+
+export interface UpsertStandardInput {
+  id?: string;
+  orderType: string;
+  name: string;
+  standard: RuleStandard;
+  enabled?: boolean;
+}
+
+/** 新增或更新规范 */
+export async function upsertStandard(input: UpsertStandardInput): Promise<StandardRow> {
+  const contentJson = JSON.stringify(input.standard);
+  if (input.id) {
+    const updated = await prisma.standardRule.update({
+      where: { id: input.id },
+      data: {
+        orderType: input.orderType,
+        name: input.name,
+        contentJson,
+        ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+      },
+    });
+    return rowToStandard(updated);
+  }
+  const created = await prisma.standardRule.create({
+    data: {
+      orderType: input.orderType,
+      name: input.name,
+      contentJson,
+      enabled: input.enabled ?? true,
+    },
+  });
+  return rowToStandard(created);
+}
+
+/** 启用/停用 */
+export async function setStandardEnabled(id: string, enabled: boolean): Promise<StandardRow> {
+  const updated = await prisma.standardRule.update({
+    where: { id },
+    data: { enabled },
+  });
+  return rowToStandard(updated);
+}
+
+/** 删除 */
+export async function deleteStandard(id: string): Promise<void> {
+  await prisma.standardRule.delete({ where: { id } });
+}
+
+/** 内置默认规范(前端做兜底展示 / 表单初始化用) */
+export function builtinStandards(): RuleStandard[] {
+  return DEFAULT_STANDARDS;
+}

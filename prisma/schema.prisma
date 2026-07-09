@@ -1,0 +1,52 @@
+// Prisma schema —— SQLite 本地数据库
+// 需求文档第九节:WorkOrderCase(历史案例)、StandardRule(规范库)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// 历史审核案例
+model WorkOrderCase {
+  id                String   @id @default(cuid())
+  orderNo           String?
+  orderType         String
+  citizenAppeal     String
+  replyContent      String
+  attachmentNote    String?
+  unit              String?
+  remark            String?
+  conclusion        String
+  riskLevel         String
+  summaryJson       String // string[] 序列化
+  issuesJson        String // ReviewIssue[] 序列化
+  reviewOpinion     String
+  confidence        Float?
+  finalOpinion      String? // 人工修改后的最终意见
+  humanEdited       Boolean  @default(false)
+  isFalsePositive   Boolean  @default(false)
+  falsePositiveNote String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([orderType])
+  @@index([riskLevel])
+  @@index([createdAt])
+}
+
+/// 回单规范库(RuleStandard 序列化后存 contentJson)
+model StandardRule {
+  id          String   @id @default(cuid())
+  orderType   String
+  name        String
+  contentJson String // RuleStandard 序列化(不含 id/orderType/name)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderType])
+}

@@ -1,0 +1,199 @@
+import type { AiProvider, AiReviewContext, RawIssue, RawReviewOutput } from "./providers";
+import type { RiskLevel, OcrExtractResult } from "../types";
+import { containsAny, matchedKeywords } from "../utils/textExtract";
+
+// ==========================================================================
+// Mock provider(无 API Key / AI_ENABLED=false 时使用)
+// --------------------------------------------------------------------------
+// 目标:在没有真实大模型时,依然走完整三段式流程,并给出确定性、可复现的
+// 语义审核结果。它以本地规则命中为基础,补充规则难以覆盖的语义问题
+// (如"未回应核心诉求""办理时间与停电时间混同"),使示例数据能识别出全部预期问题。
+// verify 阶段做轻量校正(去重、权重合理化)。
+// ==========================================================================
+
+const RISK_RANK: Record<RiskLevel, number> = { 高: 3, 中: 2, 低: 1 };
+
+function highest(issues: RawIssue[]): RiskLevel {
+  let top: RiskLevel = "低";
+  for (const it of issues) if (RISK_RANK[it.weight] > RISK_RANK[top]) top = it.weight;
+  return top;
+}
+
+const FREQUENT_APPEAL = [
+  "频繁停电",
+  "经常停电",
+  "一年内多次停电",
+  "常年停电",
+  "反复停电",
+  "总停电",
+  "多次停电",
+];
+const FREQUENT_RESPONSE = [
+  "停电记录",
+  "近期",
+  "一年内",
+  "频繁原因",
+  "频繁停电原因",
+  "治理措施",
+  "隐患排查",
+  "后续整改",
+  "减少类似问题",
+  "历史停电",
+];
+
+/** 由规则命中派生语义补充问题(确定性) */
+function deriveSemanticIssues(ctx: AiReviewContext): RawIssue[] {
+  const appeal = ctx.input.citizenAppeal ?? "";
+  const reply = ctx.input.replyContent ?? "";
+  const extra: RawIssue[] = [];
+
+  // 语义 1:未回应频繁停电核心诉求(规则 4 已覆盖,这里作为语义强化补充说明)
+  if (containsAny(appeal, FREQUENT_APPEAL) && !containsAny(reply, FREQUENT_RESPONSE)) {
+    extra.push({
+      weight: "高",
+      category: "未回应市民核心诉求",
+      evidence: "市民反映频繁/常年停电,回单仅说明本次停电原因及恢复情况。",
+      analysis:
+        "市民核心诉求是解决小区常年/频繁停电问题,回单只回应了本次停电,未回应频繁停电这一深层诉求。",
+      requirement:
+        "请围绕频繁停电核心诉求,补充近期/一年内停电记录核查、频繁停电原因及后续治理措施。",
+    });
+  }
+
+  // 语义 2:办理时间与停电时间混同
+  // 场景:出现"办理时间",但未单独写明"停电发生时间";
+  //       或回单自陈无法核实具体停电时间却仍以办理时间代替。
+  const hasHandleTime = reply.includes("办理时间");
+  const missingOutageTime = !reply.includes("停电发生时间");
+  const cannotVerifyOutageTime = /无法核实[^,。;]*停电时间/.test(reply);
+  if (hasHandleTime && (cannotVerifyOutageTime || missingOutageTime)) {
+    extra.push({
+      weight: "中",
+      category: "办理时间与停电时间混同",
+      evidence: cannotVerifyOutageTime
+        ? "回单出现「办理时间:2026年7月3日22时15分」,却又称「无法核实具体停电时间」。"
+        : "回单出现「办理时间」,但未单独写明停电发生时间。",
+      analysis:
+        "回单以「办理时间」代替停电发生时间,时间口径混同,难以判断停电实际发生时刻与抢修时长。",
+      requirement: "请区分并分别写明停电发生时间、接报时间、抢修时间与恢复供电时间。",
+    });
+  }
+
+  return extra;
+}
+
+/** Mock 模式下图片识别返回的示例工单(即翻拍图对应的马道河小区案例) */
+const MOCK_OCR_RESULT: OcrExtractResult = {
+  orderType: "频繁停电",
+  orderNo: "热线-260703-070307",
+  citizenAppeal:
+    "市民反映朝阳区六里屯街道马道河小区一年内频繁停电,7月3号22点15分停电,停电时长20分钟,整个小区都停电,希望解决常年停电问题,来电反映频繁停电问题。",
+  replyContent:
+    "【电力公司权属】【已联系】朝阳供电公司中央商务区供电服务中心隋帅于2026年7月3日23时50分与市民联系;但市民电话保密无法联系。【已解决】主责单位:朝阳供电公司中央商务区供电服务中心,办理时间:2026年7月3日22时15分。主要措施:经核实,市民反映的停电原因为7月3日树砸线导致线路停电。市民反映的频繁停电问题,因市民信息保密无法核实具体停电时间。为了排除隐患,防止发生大面积停电,采取临时检修的方式恢复供电。给市民带来了不便,深表歉意。反馈情况:已解决市民诉求,现已恢复正常供电。市民【未知意见】。",
+  unit: "朝阳供电公司中央商务区供电服务中心",
+  attachmentNote: "附件1:现场检修照片;附件2:《中华人民共和国电力法》;附件3:《供电营业规则》。",
+  rawText:
+    "(Mock 模式未真正识别图片,此处为内置示例原文)12345热线转派【多户无电】工单编号:热线-260703-070307…",
+  confidence: 0.5,
+  notes:
+    "Mock 模式未真正识别图片,已填入示例数据供演示。请配置 AI_ENABLED=true 及支持视觉的模型(AI_VISION_MODEL)后重试以真实识别。",
+};
+
+export const mockProvider: AiProvider = {
+  mode: "mock",
+  name: "mock",
+  supportsVision: true,
+
+  async extractFromImages(_images: string[]): Promise<OcrExtractResult> {
+    return { ...MOCK_OCR_RESULT };
+  },
+
+  async extractFromText(_text: string): Promise<OcrExtractResult> {
+    return {
+      ...MOCK_OCR_RESULT,
+      notes:
+        "Mock 模式未真正解析文档,已填入示例数据供演示。请配置 AI_ENABLED=true 及文本模型(AI_API_KEY)后重试。",
+    };
+  },
+
+  async review(ctx: AiReviewContext): Promise<RawReviewOutput> {
+    // 以规则命中为基础(转成 AI 视角的问题),再补语义问题
+    const fromRules: RawIssue[] = ctx.ruleFindings.map((f) => ({
+      weight: f.weight,
+      category: f.category,
+      evidence: f.evidence,
+      analysis: f.analysis,
+      requirement: f.requirement,
+    }));
+    const semantic = deriveSemanticIssues(ctx);
+    const issues = [...fromRules, ...semantic];
+
+    const riskLevel = issues.length ? highest(issues) : "低";
+    const conclusion = issues.some((i) => i.weight === "高")
+      ? "建议退回"
+      : issues.length
+        ? "建议修改"
+        : "通过";
+
+    const summary = Array.from(new Set(issues.map((i) => i.category)));
+
+    return {
+      conclusion,
+      riskLevel,
+      summary,
+      issues,
+      // 意见留给 merger 统一生成(mock 给一个基础版本,merger 会规范化)
+      reviewOpinion: buildMockOpinion(issues),
+      confidence: issues.length ? 0.82 : 0.9,
+    };
+  },
+
+  async verify(_ctx: AiReviewContext, prior: RawReviewOutput): Promise<RawReviewOutput> {
+    // 轻量复核:按 category 去重(保留更高权重),重算结论与风险
+    const byCat = new Map<string, RawIssue>();
+    for (const it of prior.issues) {
+      const key = it.category.replace(/[\s「」【】]/g, "");
+      const existing = byCat.get(key);
+      if (!existing || RISK_RANK[it.weight] > RISK_RANK[existing.weight]) {
+        byCat.set(key, it);
+      }
+    }
+    const issues = Array.from(byCat.values()).sort(
+      (a, b) => RISK_RANK[b.weight] - RISK_RANK[a.weight]
+    );
+    const riskLevel = issues.length ? highest(issues) : "低";
+    const conclusion = issues.some((i) => i.weight === "高")
+      ? "建议退回"
+      : issues.length
+        ? "建议修改"
+        : "通过";
+
+    return {
+      conclusion,
+      riskLevel,
+      summary: Array.from(new Set(issues.map((i) => i.category))),
+      issues,
+      reviewOpinion: buildMockOpinion(issues),
+      // 复核后置信度略升
+      confidence: Math.min(0.95, (prior.confidence ?? 0.8) + 0.03),
+    };
+  },
+};
+
+const ORDINALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+function buildMockOpinion(issues: RawIssue[]): string {
+  if (!issues.length) {
+    return "经审核,该回单事实清楚、要素完整、表述规范,未发现明显问题,建议通过。";
+  }
+  const sorted = [...issues].sort((a, b) => RISK_RANK[b.weight] - RISK_RANK[a.weight]);
+  const clauses = sorted
+    .slice(0, ORDINALS.length)
+    .map((it, i) => `${ORDINALS[i]}是${(it.analysis || it.category).replace(/。$/, "")}`);
+  return `经审核,该回单存在以下问题:${clauses.join(";")}。请承办单位补充完善相关情况后重新反馈。`;
+}
+
+/** 便捷判断:是否使用了某些关键词(供测试/扩展) */
+export function mockDebugMatched(reply: string, keywords: string[]): string[] {
+  return matchedKeywords(reply, keywords);
+}

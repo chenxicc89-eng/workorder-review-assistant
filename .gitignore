@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+*.log
+*.tsbuildinfo
+
+# Prisma / SQLite
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db
+prisma/migrations/dev.db*
+
+# editor / os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
