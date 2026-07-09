@@ -1,13 +1,19 @@
-// Prisma schema —— SQLite 本地数据库
+// Prisma schema —— PostgreSQL(Vercel Postgres / Neon)
 // 需求文档第九节:WorkOrderCase(历史案例)、StandardRule(规范库)
+//
+// 部署:Vercel Postgres 提供两个连接串:
+//   DATABASE_URL —— pooled(运行时用,serverless 并发安全)
+//   DIRECT_URL   —— direct(prisma migrate 用)
+// 本地开发也需指向一个 Postgres(可直接用同一个云库,或本地 Postgres)。
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 /// 历史审核案例

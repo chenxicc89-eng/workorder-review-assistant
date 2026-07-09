@@ -56,12 +56,17 @@ cp .env.example .env
 >
 > **启用真实 AI**:设置 `AI_ENABLED=true` 并填入 `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL`,重启后端即可。API Key 只从环境变量读取,绝不写死在代码里。
 
-## 三、初始化数据库
+## 三、初始化数据库(PostgreSQL)
+
+数据库使用 **PostgreSQL**(本地开发可用本地 Postgres,或直接指向云库如 Vercel Postgres / Neon)。
+先把连接串填进 `.env` 的 `DATABASE_URL` 与 `DIRECT_URL`(见 `.env.example`),然后:
 
 ```bash
 npm run db:generate   # 生成 Prisma Client
-npm run db:migrate    # 创建 SQLite 表(首次会提示输入 migration 名,可回车用默认)
-npm run db:seed       # 写入内置默认规范库(10 种工单类型)
+npm run db:migrate    # 创建表(首次会提示输入 migration 名,可回车用默认)
+# 规范库无需手动 seed —— 库为空时会自动使用内置默认规范。
+# 如需把 10 条默认规范预置入库(可选):
+npm run db:seed
 ```
 
 ## 四、启动项目
@@ -121,6 +126,33 @@ npm run preview   # 预览前端;后端用 npm start 启动
 - **Word/Excel**:只要配了文本模型(`AI_ENABLED=true` + `AI_API_KEY`,如 DeepSeek)即可用,**无需视觉模型**。
 - **图片/PDF**:需要视觉模型。若 `AI_MODEL` 是文本模型(如 `deepseek-chat`),另设 `AI_VISION_MODEL`/`AI_VISION_BASE_URL`/`AI_VISION_API_KEY` 指定支持视觉的模型(如 `qwen-vl-max` / `gpt-4o`)。未配视觉时,图片识别不可用,但 **Word/Excel 与手动粘贴仍可用**。
 - **Mock 模式**(无 Key):识别可点击演示,但**不真正读取文件**,填入内置示例并提示。配置模型后即为真实识别。
+
+---
+
+## 五之三、部署到 Vercel
+
+项目已适配 Vercel:前端(静态)+ 后端(Serverless Function,由 `api/index.ts` 承载整个 Express app)+ PostgreSQL。前端 API 走相对 `/api/*`,同域直连,无需改地址。
+
+**你需要自己做的步骤:**
+
+1. **开通云数据库**(Vercel Postgres 或 Neon),拿到两个连接串:
+   - pooled(带 `-pooler` / `pgbouncer=true`)→ 用作 `DATABASE_URL`
+   - direct → 用作 `DIRECT_URL`
+2. **建表**:本地把这两个串填进 `.env`,执行 `npm run db:deploy`(等价 `prisma migrate deploy`)对云库建表。
+   - 若还没有 migration 文件,先跑一次 `npm run db:migrate`(对着云库/本地 Postgres 生成迁移),再 `db:deploy`。
+   - 规范库**无需 seed**,库为空时自动用内置默认;想预置可选 `npm run db:seed`。
+3. **推到 Git 并在 Vercel 导入项目**(Framework Preset 选 Other/Vite 均可,已有 `vercel.json` 指定构建)。
+4. **在 Vercel 项目 → Settings → Environment Variables** 里填:
+   - `DATABASE_URL`、`DIRECT_URL`(上面两个串)
+   - `AI_ENABLED=true`、`AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`
+   - 需要图片识别再加 `AI_VISION_API_KEY`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`
+   （`.env` 不会上传,线上 Key 只在这里配。）
+5. **Deploy**。打开分配的域名即可使用。
+
+**说明:**
+- Serverless 请求体上限约 4.5MB,前端已把图片压缩到最长边 1280、质量 0.72,单次最多 6 张并做体积拦截,正常工单截图足够。
+- Prisma 用 pooled 连接串以适配 serverless 并发,`postinstall` 会自动 `prisma generate`。
+- react-router 深链(如刷新 `/cases`)由 `vercel.json` 的 SPA fallback 处理。
 
 ---
 

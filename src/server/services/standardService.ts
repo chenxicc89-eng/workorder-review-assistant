@@ -47,12 +47,35 @@ function rowToStandard(row: {
   };
 }
 
-/** 列出全部规范(可按类型过滤) */
+/** 把内置默认规范包装成 StandardRow(数据库为空时的兜底展示) */
+function builtinAsRows(orderType?: string): StandardRow[] {
+  const now = new Date().toISOString();
+  return DEFAULT_STANDARDS.filter((s) => !orderType || s.orderType === orderType).map((s) => ({
+    id: s.id,
+    orderType: s.orderType,
+    name: s.name,
+    enabled: true,
+    standard: s,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+/**
+ * 列出全部规范(可按类型过滤)。
+ * 数据库为空时(如刚部署未 seed)自动返回内置默认规范,保证开箱即用;
+ * 一旦库中有数据,则以库为准。用户新增/编辑会正常写入库。
+ */
 export async function listStandards(orderType?: string): Promise<StandardRow[]> {
   const rows = await prisma.standardRule.findMany({
     where: orderType ? { orderType } : undefined,
     orderBy: { orderType: "asc" },
   });
+  if (rows.length === 0) {
+    // 全库是否真的为空(避免"按类型过滤后为空"却误判)
+    const total = orderType ? await prisma.standardRule.count() : 0;
+    if (!orderType || total === 0) return builtinAsRows(orderType);
+  }
   return rows.map(rowToStandard);
 }
 

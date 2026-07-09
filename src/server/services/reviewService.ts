@@ -19,8 +19,10 @@ import { getActiveStandard } from "./standardService";
 export class ReviewInputError extends Error {}
 
 // 工单类型改为由图片识别自动填入,不再要求前端手动录入。
-// 未提供类型时回退「其他」通用规范,故校验只强制诉求与回单正文。
-function validate(input: WorkOrderInput) {
+// 未提供类型时回退「其他」通用规范,故入参 orderType 可缺省,校验只强制诉求与回单正文。
+type ReviewInput = Omit<WorkOrderInput, "orderType"> & { orderType?: string };
+
+function validate(input: ReviewInput) {
   if (!input || typeof input !== "object") throw new ReviewInputError("请求体无效");
   if (!input.citizenAppeal?.trim()) throw new ReviewInputError("市民诉求不能为空");
   if (!input.replyContent?.trim()) throw new ReviewInputError("回单内容不能为空");
@@ -31,7 +33,7 @@ export interface ReviewServiceResult extends ReviewResult {
   degradedNote?: string;
 }
 
-export async function reviewWorkOrder(rawInput: WorkOrderInput): Promise<ReviewServiceResult> {
+export async function reviewWorkOrder(rawInput: ReviewInput): Promise<ReviewServiceResult> {
   validate(rawInput);
 
   // 工单类型缺省回退「其他」,后续规范查询与规则引擎据此运行

@@ -6,8 +6,10 @@
 // pdfjs 仅在选到 PDF 时才加载,不进入主包关键路径。
 // ==========================================================================
 
-const MAX_EDGE = 2000; // 最长边像素上限
-const JPEG_QUALITY = 0.85;
+// 压缩参数偏激进,以适配 Vercel Serverless ~4.5MB 请求体上限。
+// 工单截图多为文字,1280px + 0.72 质量已足够清晰识别。
+const MAX_EDGE = 1280; // 最长边像素上限
+const JPEG_QUALITY = 0.72;
 
 export interface PreparedImage {
   /** base64 data URL */
