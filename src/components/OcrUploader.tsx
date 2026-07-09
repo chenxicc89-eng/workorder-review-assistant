@@ -127,18 +127,23 @@ export function OcrUploader({ onExtracted, visionAvailable = true, visionHint }:
     try {
       const results: OcrExtractResult[] = [];
 
-      // 图片/PDF 路径(视觉)
+      // 图片/PDF 路径(视觉):逐张【并行】识别。
+      // 串行会让 3 张图 = 3×单张耗时,极易撞 Vercel 60s 超时(504);
+      // 并行后整体墙钟 ≈ 最慢一张,且每个请求体只含单图,更不易超限/超时。
       if (images.length) {
         if (!visionAvailable) {
           toast("图片识别不可用,已跳过图片,仅识别 Word/Excel", "info");
         } else {
-          for (const im of images) {
-            if (estimatePayload([im.dataUrl]) > MAX_IMAGE_PAYLOAD) {
-              toast(`图片 ${im.name} 体积偏大,请裁剪或重新拍摄后重试`, "error");
-              return;
-            }
-            results.push(await extractFromImages([im.dataUrl]));
+          // 先做体积预检,任一张超标即中止(避免发出注定失败的请求)
+          const oversized = images.find((im) => estimatePayload([im.dataUrl]) > MAX_IMAGE_PAYLOAD);
+          if (oversized) {
+            toast(`图片 ${oversized.name} 体积偏大,请裁剪或重新拍摄后重试`, "error");
+            return;
           }
+          const imageResults = await Promise.all(
+            images.map((im) => extractFromImages([im.dataUrl]))
+          );
+          results.push(...imageResults);
         }
       }
 

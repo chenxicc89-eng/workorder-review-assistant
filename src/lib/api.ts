@@ -29,11 +29,34 @@ export interface StandardListItem {
   updatedAt: string;
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+interface RequestOptions {
+  /** 客户端超时(毫秒)。到时主动中止并抛可读错误,避免干等到平台 504。 */
+  timeoutMs?: number;
+  /** 超时时的提示文案 */
+  timeoutMessage?: string;
+}
+
+async function request<T>(url: string, init?: RequestInit, opts?: RequestOptions): Promise<T> {
+  const controller = opts?.timeoutMs ? new AbortController() : undefined;
+  const timer =
+    controller && opts?.timeoutMs
+      ? setTimeout(() => controller.abort(), opts.timeoutMs)
+      : undefined;
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller?.signal,
+      ...init,
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error(opts?.timeoutMessage || "请求超时,请重试");
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (!resp.ok) {
     let msg = `请求失败 (${resp.status})`;
     try {
@@ -124,20 +147,27 @@ export function deleteStandard(id: string): Promise<void> {
 }
 
 // ---- ocr ----
+// 视觉模型推理慢,serverless 平台约 60s 超时;客户端设略短超时(58s)主动中止,
+// 给出可读提示,而不是干等到平台返回含糊的 504。
+const OCR_TIMEOUT_MS = 58_000;
+const OCR_TIMEOUT_MSG = "识别超时(图片较复杂或网络较慢)。请换更清晰/更小的图片重试,或改用手动粘贴。";
+
 /** 图片 OCR + 工单字段抽取。images 为 base64 data URL 数组。 */
 export function extractFromImages(images: string[]): Promise<OcrExtractResult> {
-  return request<OcrExtractResult>("/api/ocr/extract", {
-    method: "POST",
-    body: JSON.stringify({ images }),
-  });
+  return request<OcrExtractResult>(
+    "/api/ocr/extract",
+    { method: "POST", body: JSON.stringify({ images }) },
+    { timeoutMs: OCR_TIMEOUT_MS, timeoutMessage: OCR_TIMEOUT_MSG }
+  );
 }
 
 /** Word/Excel 解析出的纯文本 → 工单字段抽取(走文本模型)。 */
 export function extractFromText(text: string): Promise<OcrExtractResult> {
-  return request<OcrExtractResult>("/api/ocr/extract-text", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
+  return request<OcrExtractResult>(
+    "/api/ocr/extract-text",
+    { method: "POST", body: JSON.stringify({ text }) },
+    { timeoutMs: OCR_TIMEOUT_MS, timeoutMessage: OCR_TIMEOUT_MSG }
+  );
 }
 
 // ---- health ----
