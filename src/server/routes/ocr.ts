@@ -5,9 +5,10 @@ import { runExtract, runExtractText } from "../../lib/ai/aiClient";
 // POST /api/ocr/extract —— 图片 OCR + 工单字段抽取
 export const ocrRouter = Router();
 
-const MAX_IMAGES = 8;
-// 单张 data URL 最大约 8MB(base64 后),总量受 index.ts 的 json limit 约束
-const MAX_ONE = 8 * 1024 * 1024;
+const MAX_IMAGES = 16;
+// 单张 data URL 最大约 40MB(base64 后),总量受 app.ts 的 json limit(50mb)约束。
+// 放得尽量宽松;Vercel 部署时仍受平台约 4.5MB 请求体硬上限约束,前端会压到阈值内。
+const MAX_ONE = 40 * 1024 * 1024;
 
 const bodySchema = z.object({
   images: z
