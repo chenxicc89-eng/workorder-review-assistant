@@ -63,6 +63,13 @@ export function ReviewPage() {
 
   const handleMarkFalsePositive = async () => {
     if (!result) return;
+    // 让用户写"错在哪":这条原因会作为历史纠错示例,供以后同类工单审核参考。
+    const note = window.prompt(
+      "标记为误判。请简述你认为 AI 错在哪(可留空)。\n例:承办单位已在附件补充了处理时间,不应判为退回。",
+      ""
+    );
+    if (note === null) return; // 用户取消
+    const falsePositiveNote = note.trim() || undefined;
     setSaving(true);
     try {
       let id = savedCaseId;
@@ -72,7 +79,7 @@ export function ReviewPage() {
         id = record.id;
         setSavedCaseId(id);
       }
-      await patchCase(id, { isFalsePositive: true });
+      await patchCase(id, { isFalsePositive: true, falsePositiveNote });
       toast("已标记为误判,可在历史案例中查看", "success");
     } catch (e) {
       toast(`标记失败:${(e as Error).message}`, "error");

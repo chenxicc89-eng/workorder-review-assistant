@@ -34,11 +34,33 @@ export interface RawReviewOutput {
   confidence: number;
 }
 
+/**
+ * 一条历史纠错示例(few-shot):人工对同类工单的判定,用于让 AI 对齐用户口径。
+ * 来源于历史案例中「人工修改过意见」或「标记为误判」的记录。
+ */
+export interface CorrectionExample {
+  /** 市民诉求摘要(已截断) */
+  citizenAppeal: string;
+  /** 回单内容摘要(已截断) */
+  replyContent: string;
+  /** 当时 AI 给出的结论 / 风险(供对照) */
+  aiConclusion: ReviewConclusion;
+  aiRiskLevel: RiskLevel;
+  /** 人工最终意见(humanEdited 时有) */
+  finalOpinion?: string;
+  /** 是否被人工标记为误判 */
+  isFalsePositive: boolean;
+  /** 用户写的"错在哪"说明(误判时) */
+  falsePositiveNote?: string;
+}
+
 /** 传给 provider 的上下文 */
 export interface AiReviewContext {
   input: WorkOrderInput;
   ruleFindings: ReviewIssue[];
   standard?: RuleStandard | null;
+  /** 历史纠错示例(可选);用于 few-shot 引导,让审核对齐用户过往判定 */
+  corrections?: CorrectionExample[];
 }
 
 /** provider 统一接口 */

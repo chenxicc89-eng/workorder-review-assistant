@@ -172,6 +172,7 @@ export function createOpenAiProvider(env: AiEnvConfig): AiProvider {
           input: ctx.input,
           ruleFindings: ctx.ruleFindings,
           standard: ctx.standard,
+          corrections: ctx.corrections,
         })
       );
     },

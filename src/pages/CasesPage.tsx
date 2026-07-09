@@ -1,5 +1,5 @@
 import * as React from "react";
-import type { CaseQuery, RiskLevel, WorkOrderCaseRecord } from "@/lib/types";
+import type { CaseQuery, PatchCasePayload, RiskLevel, WorkOrderCaseRecord } from "@/lib/types";
 import { ORDER_TYPES } from "@/lib/standards/defaultStandards";
 import { listCases, patchCase } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,8 +65,21 @@ export function CasesPage() {
   }, [orderType, riskLevel, fpFilter]);
 
   const markFalsePositive = async (rec: WorkOrderCaseRecord) => {
+    const willMark = !rec.isFalsePositive;
+    const patch: PatchCasePayload = { isFalsePositive: willMark };
+    if (willMark) {
+      // 标记时让用户写"错在哪";取消标记则清空说明。
+      const note = window.prompt(
+        "标记为误判。请简述你认为 AI 错在哪(可留空)。\n例:承办单位已在附件补充了处理时间,不应判为退回。",
+        rec.falsePositiveNote || ""
+      );
+      if (note === null) return; // 取消
+      patch.falsePositiveNote = note.trim();
+    } else {
+      patch.falsePositiveNote = "";
+    }
     try {
-      const updated = await patchCase(rec.id, { isFalsePositive: !rec.isFalsePositive });
+      const updated = await patchCase(rec.id, patch);
       setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       if (detail?.id === updated.id) setDetail(updated);
       toast(updated.isFalsePositive ? "已标记为误判" : "已取消误判标记", "success");
@@ -262,6 +275,9 @@ function CaseDetailModal({
               value={new Date(record.createdAt).toLocaleString("zh-CN", { hour12: false })}
             />
           </section>
+          {record.isFalsePositive && record.falsePositiveNote && (
+            <Field label="误判说明(错在哪)" value={record.falsePositiveNote} block />
+          )}
           <Field label="市民诉求" value={record.citizenAppeal} block />
           <Field label="回单内容" value={record.replyContent} block />
 

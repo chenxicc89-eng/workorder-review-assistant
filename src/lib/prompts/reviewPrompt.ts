@@ -1,4 +1,5 @@
 import type { ReviewIssue, RuleStandard, WorkOrderInput } from "../types";
+import type { CorrectionExample } from "../ai/providers";
 
 // ==========================================================================
 // 主审核 Prompt(需求文档第七节)
@@ -89,14 +90,44 @@ function formatRuleFindings(findings: ReviewIssue[]): string {
     .join("\n");
 }
 
+/**
+ * 把历史纠错示例整理成 few-shot 文本。
+ * 这是"人工对同类工单的实际判定",用来让本次审核对齐用户口径:
+ * - 人工修改过意见 → 展示人工最终意见(这是用户认可的正确表述)。
+ * - 被标记为误判 → 明确告知 AI 当时的判定是误判,并附上用户写的"错在哪"。
+ */
+function formatCorrections(corrections?: CorrectionExample[]): string {
+  if (!corrections?.length) return "(暂无历史纠错案例。)";
+  return corrections
+    .map((c, i) => {
+      const lines = [
+        `示例${i + 1}:`,
+        `  市民诉求:${c.citizenAppeal || "(无)"}`,
+        `  回单内容:${c.replyContent || "(无)"}`,
+        `  AI当时判定:${c.aiConclusion} / 风险${c.aiRiskLevel}`,
+      ];
+      if (c.isFalsePositive) {
+        lines.push(
+          `  ⚠ 人工判定:该 AI 判定为【误判】${c.falsePositiveNote ? `,原因:${c.falsePositiveNote}` : "(未填原因)"}`
+        );
+      }
+      if (c.finalOpinion) {
+        lines.push(`  ✔ 人工最终意见(应对齐此口径):${c.finalOpinion}`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
 export interface ReviewPromptContext {
   input: WorkOrderInput;
   ruleFindings: ReviewIssue[];
   standard?: RuleStandard | null;
+  corrections?: CorrectionExample[];
 }
 
 export function buildReviewUserPrompt(ctx: ReviewPromptContext): string {
-  const { input, ruleFindings, standard } = ctx;
+  const { input, ruleFindings, standard, corrections } = ctx;
   return `请对以下 12345 工单回单进行预审,并按要求输出 JSON。
 
 【工单类型】
@@ -120,11 +151,15 @@ ${input.remark || "(无)"}
 【对应工单类型规范】
 ${formatStandard(standard)}
 
+【历史纠错案例(人工对同类工单的实际判定,请优先对齐其口径与尺度)】
+${formatCorrections(corrections)}
+
 【本地规则命中结果(确定性预检,供参考)】
 ${formatRuleFindings(ruleFindings)}
 
 要求:
 - 结合上述规范与规则命中结果,补充语义层面的问题(如是否回应核心诉求、事实是否清楚、措施是否具体等)。
+- 若「历史纠错案例」中有与本工单相似的情形,请对齐人工的判定尺度:人工认为是误判的问题不要再报,人工最终意见的表述口径应作为参照。
 - 每条问题必须引用回单或诉求中的原文作为 evidence。
 - 只输出 JSON 对象,字段严格为 conclusion / riskLevel / summary / issues / reviewOpinion / confidence。
 - issues 中每项包含 weight / category / evidence / analysis / requirement。`;
