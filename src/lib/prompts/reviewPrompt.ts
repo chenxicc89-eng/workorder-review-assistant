@@ -24,6 +24,11 @@ export const REVIEW_SYSTEM_PROMPT = `你是国家电网12345工单回单审核�
 请严格基于输入文本判断,不得编造事实。
 如果某项问题没有足够依据,请不要强行指出。
 如果发现问题,请引用回单或诉求中的原文作为依据。
+重要:描述问题时必须区分以下两种情况,措辞不得混用:
+- 回单【完全没有提及】某诉求或要素 —— 才可用"未回应""未提及""未说明"等表述;
+- 回单【已经提及或作出结论,但缺少核实过程、事实依据或处理细节】 —— 必须表述为"虽已说明……但缺少核实过程/事实支撑/处理细节",不得写成"未回应"或"未提及"。
+例如:回单称"经核实并非电表故障",这属于"已作出结论但未提供核实依据",应指出"回单已就电表故障作出结论,但未说明核实过程(如电表读数、现场或远程核实情况)",而不能写"未回应电表故障"。
+判断问题依据回单事实是否充分,而非表面是否出现相关字眼;但生成 evidence/analysis/审核意见时,措辞要与回单实际内容一致,避免出现与原文明显矛盾的表述。
 问题权重分为:高、中、低。
 权重判断标准:
 高风险:
@@ -59,7 +64,10 @@ Issue 字段包括:
 - evidence: string
 - analysis: string
 - requirement: string
-审核意见 reviewOpinion 要使用正式、简洁、可直接复制给承办单位的语言。`;
+审核意见 reviewOpinion 要使用正式、简洁、可直接复制给承办单位的语言,并且必须同时包含两部分:
+1. 存在的问题(逐条说明);
+2. 整改建议(即应如何补充、修改,可与各 Issue 的 requirement 对应)。
+即:审核意见不能只指出问题,还要写清承办单位应当怎么改。`;
 
 /** 把一条规范整理成给 AI 看的紧凑要求文本 */
 function formatStandard(standard?: RuleStandard | null): string {
@@ -76,6 +84,16 @@ function formatStandard(standard?: RuleStandard | null): string {
     lines.push(`低风险问题:${standard.lowRiskIssues.join("、")}`);
   if (standard.standardRequirements?.length)
     lines.push(`规范要求:${standard.standardRequirements.join(";")}`);
+  // Tier3:从历史反馈提炼并经人工采纳的常驻准则。随规范块注入,不占 few-shot 预算 →
+  // 反馈"永久记住":此处的准则是过往教训的固化,优先级等同规范本身。
+  if (standard.learnedRules?.length)
+    lines.push(
+      `从历史反馈提炼的加强准则(必须遵守,与规范同等效力):${standard.learnedRules.join(";")}`
+    );
+  if (standard.learnedExemptions?.length)
+    lines.push(
+      `从历史反馈提炼的豁免准则(以下情形属人工确认的合理情况,不应报为问题):${standard.learnedExemptions.join(";")}`
+    );
   return lines.join("\n");
 }
 
@@ -96,27 +114,44 @@ function formatRuleFindings(findings: ReviewIssue[]): string {
  * - 人工修改过意见 → 展示人工最终意见(这是用户认可的正确表述)。
  * - 被标记为误判 → 明确告知 AI 当时的判定是误判,并附上用户写的"错在哪"。
  */
+function formatOneCorrection(c: CorrectionExample, label: string): string {
+  const prefix = c.crossType ? `${label}(来自「${c.crossType.fromOrderType}」类型)` : label;
+  const lines = [
+    `${prefix}:`,
+    `  市民诉求:${c.citizenAppeal || "(无)"}`,
+    `  回单内容:${c.replyContent || "(无)"}`,
+    `  AI当时判定:${c.aiConclusion} / 风险${c.aiRiskLevel}`,
+  ];
+  if (c.isFalsePositive) {
+    lines.push(
+      `  ⚠ 人工判定:该 AI 判定为【误判】${c.falsePositiveNote ? `,原因:${c.falsePositiveNote}` : "(未填原因)"}`
+    );
+  }
+  if (c.finalOpinion) {
+    lines.push(`  ✔ 人工最终意见(应对齐此口径):${c.finalOpinion}`);
+  }
+  return lines.join("\n");
+}
+
 function formatCorrections(corrections?: CorrectionExample[]): string {
   if (!corrections?.length) return "(暂无历史纠错案例。)";
-  return corrections
-    .map((c, i) => {
-      const lines = [
-        `示例${i + 1}:`,
-        `  市民诉求:${c.citizenAppeal || "(无)"}`,
-        `  回单内容:${c.replyContent || "(无)"}`,
-        `  AI当时判定:${c.aiConclusion} / 风险${c.aiRiskLevel}`,
-      ];
-      if (c.isFalsePositive) {
-        lines.push(
-          `  ⚠ 人工判定:该 AI 判定为【误判】${c.falsePositiveNote ? `,原因:${c.falsePositiveNote}` : "(未填原因)"}`
-        );
-      }
-      if (c.finalOpinion) {
-        lines.push(`  ✔ 人工最终意见(应对齐此口径):${c.finalOpinion}`);
-      }
-      return lines.join("\n");
-    })
-    .join("\n\n");
+  // Tier2:同类反馈"硬对齐",跨类反馈"仅作类比参考",分块给出不同表头,防止模型
+  // 把其他类型的判定尺度直接照搬到本类型上。
+  const sameType = corrections.filter((c) => !c.crossType);
+  const crossType = corrections.filter((c) => c.crossType);
+
+  const blocks: string[] = [];
+  if (sameType.length) {
+    const header = `以下为 ${sameType.length} 条【同类工单】历史纠错案例(人工对同类工单的实际判定,请整体对齐其口径与尺度):\n`;
+    const body = sameType.map((c, i) => formatOneCorrection(c, `示例${i + 1}`)).join("\n\n");
+    blocks.push(header + body);
+  }
+  if (crossType.length) {
+    const header = `以下为 ${crossType.length} 条【其他工单类型】的相关反馈,仅作类比参考(判定尺度仍以本工单类型的规范为准,不要照搬跨类结论,但可借鉴其中相通的审核思路):\n`;
+    const body = crossType.map((c, i) => formatOneCorrection(c, `类比${i + 1}`)).join("\n\n");
+    blocks.push(header + body);
+  }
+  return blocks.join("\n\n");
 }
 
 export interface ReviewPromptContext {
@@ -161,6 +196,7 @@ ${formatRuleFindings(ruleFindings)}
 - 结合上述规范与规则命中结果,补充语义层面的问题(如是否回应核心诉求、事实是否清楚、措施是否具体等)。
 - 若「历史纠错案例」中有与本工单相似的情形,请对齐人工的判定尺度:人工认为是误判的问题不要再报,人工最终意见的表述口径应作为参照。
 - 每条问题必须引用回单或诉求中的原文作为 evidence。
+- reviewOpinion 必须既指出问题、又给出整改建议(承办单位应如何补充或修改),不能只列问题。
 - 只输出 JSON 对象,字段严格为 conclusion / riskLevel / summary / issues / reviewOpinion / confidence。
 - issues 中每项包含 weight / category / evidence / analysis / requirement。`;
 }

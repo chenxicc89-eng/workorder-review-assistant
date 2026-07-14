@@ -5,7 +5,10 @@ import type {
   WorkOrderInput,
   ReviewIssue,
   OcrExtractResult,
+  DistilledCandidate,
 } from "../types";
+
+export type { DistilledCandidate } from "../types";
 
 // ==========================================================================
 // AI Provider 抽象层
@@ -39,6 +42,8 @@ export interface RawReviewOutput {
  * 来源于历史案例中「人工修改过意见」或「标记为误判」的记录。
  */
 export interface CorrectionExample {
+  /** 来源案例 id(few-shot 注入时可空;蒸馏时用于回填 supportingCaseIds 溯源) */
+  caseId?: string;
   /** 市民诉求摘要(已截断) */
   citizenAppeal: string;
   /** 回单内容摘要(已截断) */
@@ -52,6 +57,21 @@ export interface CorrectionExample {
   isFalsePositive: boolean;
   /** 用户写的"错在哪"说明(误判时) */
   falsePositiveNote?: string;
+  /**
+   * Tier2:若该反馈来自其他工单类型(跨类类比参考),记录来源类型。
+   * 存在时 formatCorrections 会把它放到「仅作类比参考」表头下,避免照搬跨类结论。
+   */
+  crossType?: { fromOrderType: string };
+}
+
+/** Tier3:传给 provider.distill 的上下文(离线蒸馏,非审核热路径) */
+export interface DistillContext {
+  /** 蒸馏针对的工单类型 */
+  orderType: string;
+  /** 该类型下人工纠错(误判/人工改意见)的整批语料 */
+  feedback: CorrectionExample[];
+  /** 该类型当前生效规范(供 LLM 去重,避免重复提炼已有规则) */
+  existingStandard?: RuleStandard | null;
 }
 
 /** 传给 provider 的上下文 */
@@ -79,6 +99,12 @@ export interface AiProvider {
   extractFromImages(images: string[]): Promise<OcrExtractResult>;
   /** 纯文本(Word/Excel 解析结果)字段抽取。走文本模型,不依赖视觉。 */
   extractFromText(text: string): Promise<OcrExtractResult>;
+  /**
+   * Tier3:离线蒸馏——把一批人工纠错聚类、合成为候选常驻规则。
+   * 由「学习中心」手动触发,不在审核热路径上,故可承受较长耗时。
+   * 返回的候选不含 id/status,由 learningService 落库为 pending。
+   */
+  distill(ctx: DistillContext): Promise<DistilledCandidate[]>;
 }
 
 // ---- provider 选择 ----

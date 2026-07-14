@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IssueTable } from "@/components/IssueTable";
 import { RuleFindingList } from "@/components/RuleFindingList";
 import { ReviewOpinionBox } from "@/components/ReviewOpinionBox";
+import { LearningContextBox } from "@/components/LearningContextBox";
 import { Save, Flag, RefreshCw, Loader2, ShieldCheck, ShieldAlert } from "lucide-react";
 
 interface Props {
@@ -108,6 +109,8 @@ export function ReviewResultPanel({
               {result.degradedNote}
             </div>
           )}
+          {/* 学习依据(C2):本次参考了哪些历史反馈/准则 */}
+          <LearningContextBox ctx={result.learningContext} />
           {/* 问题摘要标签 */}
           <div>
             <div className="mb-1.5 text-sm font-medium text-muted-foreground">问题摘要</div>

@@ -5,6 +5,7 @@ import { reviewRouter } from "./routes/review";
 import { casesRouter } from "./routes/cases";
 import { standardsRouter } from "./routes/standards";
 import { ocrRouter } from "./routes/ocr";
+import { learningRouter } from "./routes/learning";
 import { readAiEnv } from "../lib/ai/providers";
 
 // ==========================================================================
@@ -40,6 +41,7 @@ app.use("/api/review", reviewRouter);
 app.use("/api/cases", casesRouter);
 app.use("/api/standards", standardsRouter);
 app.use("/api/ocr", ocrRouter);
+app.use("/api/learning", learningRouter);
 
 // 兜底错误处理
 app.use(

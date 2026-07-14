@@ -60,3 +60,33 @@ model StandardRule {
 
   @@index([orderType])
 }
+
+/// Tier3:从历史反馈蒸馏出的「学习规则」候选与其生命周期。
+/// 本表是候选 pending/adopted/rejected 的真相源与审计;采纳后其 text 会被投影进
+/// 对应 StandardRule.contentJson 的 learnedRules/learnedExemptions
+/// (审核热路径只读规范,不查本表,故审核延迟不受影响)。
+model LearnedRule {
+  id                String    @id @default(cuid())
+  orderType         String
+  /// "reinforce"(加强规则)| "exempt"(豁免规则)
+  kind              String
+  /// 规则正文(采纳后写入规范的那句话)
+  text              String
+  /// 提炼理由(给人工看,不进审核 prompt)
+  rationale         String
+  /// "pending" | "adopted" | "rejected"
+  status            String    @default("pending")
+  /// 加强规则的建议风险等级(exempt 可空)
+  riskLevel         String?
+  confidence        Float?
+  /// 支撑该规则的历史案例 id(string[] 序列化,沿用 summaryJson 风格)
+  supportingCaseIds String
+  /// 同一批「生成候选」的批次标识
+  sourceBatchId     String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  adoptedAt         DateTime?
+
+  @@index([orderType])
+  @@index([status])
+}

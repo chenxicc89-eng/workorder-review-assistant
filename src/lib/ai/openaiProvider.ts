@@ -1,6 +1,14 @@
 import OpenAI from "openai";
-import type { AiEnvConfig, AiProvider, AiReviewContext, RawReviewOutput } from "./providers";
+import type {
+  AiEnvConfig,
+  AiProvider,
+  AiReviewContext,
+  RawReviewOutput,
+  DistillContext,
+  DistilledCandidate,
+} from "./providers";
 import { REVIEW_SYSTEM_PROMPT, buildReviewUserPrompt } from "../prompts/reviewPrompt";
+import { DISTILL_SYSTEM_PROMPT, buildDistillUserPrompt } from "../prompts/distillPrompt";
 import {
   VERIFY_SYSTEM_PROMPT,
   buildVerifyUserPrompt,
@@ -24,6 +32,43 @@ import type { RiskLevel, ReviewConclusion, OcrExtractResult } from "../types";
 
 const VALID_RISK: RiskLevel[] = ["高", "中", "低"];
 const VALID_CONCLUSION: ReviewConclusion[] = ["通过", "建议修改", "建议退回"];
+const VALID_KIND = ["reinforce", "exempt"] as const;
+
+/**
+ * 校正蒸馏输出:把 LLM 返回的 candidates 归一化为 DistilledCandidate[]。
+ * LLM 用 supportingIndexes(1-based,对应输入 feedback 顺序)标注支撑案例,
+ * 这里映射回真实的 caseId(feedback[idx-1].caseId),缺失则跳过。
+ */
+function normalizeDistill(raw: any, feedbackCaseIds: (string | undefined)[]): DistilledCandidate[] {
+  const list = Array.isArray(raw?.candidates) ? raw.candidates : [];
+  const out: DistilledCandidate[] = [];
+  for (const c of list) {
+    const kind = VALID_KIND.includes(c?.kind) ? c.kind : "reinforce";
+    const text = String(c?.text ?? "").trim();
+    if (!text) continue; // 无正文的候选无意义,丢弃
+    const indexes: number[] = Array.isArray(c?.supportingIndexes)
+      ? c.supportingIndexes.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+      : [];
+    const supportingCaseIds = Array.from(
+      new Set(
+        indexes
+          .map((i) => feedbackCaseIds[i - 1]) // 1-based → 0-based
+          .filter((id): id is string => !!id)
+      )
+    );
+    let confidence = typeof c?.confidence === "number" ? c.confidence : 0.7;
+    confidence = Math.max(0, Math.min(1, confidence));
+    out.push({
+      kind,
+      text,
+      rationale: String(c?.rationale ?? "").trim(),
+      supportingCaseIds,
+      riskLevel: VALID_RISK.includes(c?.riskLevel) ? c.riskLevel : undefined,
+      confidence: Math.round(confidence * 100) / 100,
+    });
+  }
+  return out;
+}
 
 /** 宽松解析并校正大模型返回的 JSON,保证结构合法 */
 function normalizeOutput(raw: any): RawReviewOutput {
@@ -203,6 +248,22 @@ export function createOpenAiProvider(env: AiEnvConfig): AiProvider {
 
     async extractFromText(text: string): Promise<OcrExtractResult> {
       return textExtract(text);
+    },
+
+    async distill(ctx: DistillContext): Promise<DistilledCandidate[]> {
+      // 离线蒸馏:走文本模型(非视觉),JSON 模式。耗时较长但不在审核热路径上。
+      const resp = await client.chat.completions.create({
+        model: env.model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: DISTILL_SYSTEM_PROMPT },
+          { role: "user", content: buildDistillUserPrompt(ctx) },
+        ],
+      });
+      const content = resp.choices?.[0]?.message?.content ?? "";
+      if (!content) throw new Error("AI 返回内容为空");
+      return normalizeDistill(parseJson(content), ctx.feedback.map((f) => f.caseId));
     },
   };
 }

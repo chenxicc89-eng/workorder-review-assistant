@@ -1,13 +1,14 @@
 import * as React from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils/cn";
-import { ClipboardCheck, History, BookOpen } from "lucide-react";
+import { ClipboardCheck, History, BookOpen, GraduationCap } from "lucide-react";
 import { getHealth, type HealthInfo } from "@/lib/api";
 
 const NAV = [
   { to: "/", label: "工单审核", icon: ClipboardCheck, end: true },
   { to: "/cases", label: "历史案例", icon: History, end: false },
   { to: "/standards", label: "规范库", icon: BookOpen, end: false },
+  { to: "/learning", label: "学习中心", icon: GraduationCap, end: false },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

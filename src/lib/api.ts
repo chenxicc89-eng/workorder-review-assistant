@@ -1,5 +1,7 @@
 import type {
   CaseQuery,
+  LearnedRuleRecord,
+  LearnedRuleStatus,
   OcrExtractResult,
   PatchCasePayload,
   ReviewResult,
@@ -144,6 +146,38 @@ export function toggleStandard(id: string, enabled: boolean): Promise<StandardLi
 
 export function deleteStandard(id: string): Promise<void> {
   return request<void>(`/api/standards/${id}`, { method: "DELETE" });
+}
+
+// ---- learning(学习中心 / Tier3)----
+/** 生成候选准则(触发离线蒸馏,可能较慢) */
+export function generateLearnedCandidates(orderType: string): Promise<LearnedRuleRecord[]> {
+  return request<LearnedRuleRecord[]>(
+    "/api/learning/candidates",
+    { method: "POST", body: JSON.stringify({ orderType }) },
+    {
+      timeoutMs: 58_000,
+      timeoutMessage: "生成候选超时(蒸馏耗时较长),请稍后重试或减少该类型的历史反馈量。",
+    }
+  );
+}
+
+export function listLearnedRules(query: {
+  orderType?: string;
+  status?: LearnedRuleStatus;
+} = {}): Promise<LearnedRuleRecord[]> {
+  const params = new URLSearchParams();
+  if (query.orderType) params.set("orderType", query.orderType);
+  if (query.status) params.set("status", query.status);
+  const qs = params.toString();
+  return request<LearnedRuleRecord[]>(`/api/learning/rules${qs ? `?${qs}` : ""}`);
+}
+
+export function adoptLearnedRule(id: string): Promise<LearnedRuleRecord> {
+  return request<LearnedRuleRecord>(`/api/learning/rules/${id}/adopt`, { method: "POST" });
+}
+
+export function rejectLearnedRule(id: string): Promise<LearnedRuleRecord> {
+  return request<LearnedRuleRecord>(`/api/learning/rules/${id}/reject`, { method: "POST" });
 }
 
 // ---- ocr ----

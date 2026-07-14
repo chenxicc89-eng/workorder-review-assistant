@@ -1,4 +1,11 @@
-import type { AiProvider, AiReviewContext, RawIssue, RawReviewOutput } from "./providers";
+import type {
+  AiProvider,
+  AiReviewContext,
+  RawIssue,
+  RawReviewOutput,
+  DistillContext,
+  DistilledCandidate,
+} from "./providers";
 import type { RiskLevel, OcrExtractResult } from "../types";
 import { containsAny, matchedKeywords } from "../utils/textExtract";
 
@@ -178,7 +185,94 @@ export const mockProvider: AiProvider = {
       confidence: Math.min(0.95, (prior.confidence ?? 0.8) + 0.03),
     };
   },
+
+  async distill(ctx: DistillContext): Promise<DistilledCandidate[]> {
+    return mockDistill(ctx);
+  },
 };
+
+// --------------------------------------------------------------------------
+// Mock 蒸馏:确定性关键词聚类,保证无 Key 开发也能演示/测试「学习中心」。
+// 规则:
+//   - exempt(豁免)← 误判记录里含"过度报错信号词"(保密/无法核实/已说明…),
+//     同一信号词 ≥2 条误判才提炼(反复出现),避免一次性纠错成规则。
+//   - reinforce(加强)← 人工改意见里含"补要素信号词"(应补充/未写明/需说明…),
+//     同一信号词 ≥2 条才提炼。
+//   - 若信号已在现有规范/已有准则里出现,则去重跳过。
+// --------------------------------------------------------------------------
+
+/** 误判里常见的"AI 过度报错"信号 → 对应一条豁免准则模板 */
+const EXEMPT_SIGNALS: { kw: string[]; text: string }[] = [
+  {
+    kw: ["保密", "无法核实", "无法联系"],
+    text: "市民电话保密或信息受限导致无法核实时,不应据此判为「联系情况矛盾」或「未回应」的高风险问题,应结合报备情况综合判断。",
+  },
+  {
+    kw: ["已说明", "已作出结论", "已回应"],
+    text: "回单已就某要素作出结论或说明时,不应报为「未回应/未提及」,如缺依据应表述为「已说明但缺少核实过程/事实支撑」。",
+  },
+];
+
+/** 人工改意见里常见的"需补要素"信号 → 对应一条加强准则模板 */
+const REINFORCE_SIGNALS: { kw: string[]; text: string; riskLevel: RiskLevel }[] = [
+  {
+    kw: ["停电发生时间", "恢复供电时间", "抢修时间"],
+    text: "必须分别写明停电发生时间、抢修时间与恢复供电时间,不得以「办理时间」混同代替。",
+    riskLevel: "中",
+  },
+  {
+    kw: ["频繁", "常年", "多次", "后续治理", "隐患排查"],
+    text: "对频繁/常年停电诉求,必须回应频繁停电原因与后续治理措施,仅说明本次停电视为未回应核心诉求。",
+    riskLevel: "高",
+  },
+];
+
+function mockDistill(ctx: DistillContext): DistilledCandidate[] {
+  const { feedback, existingStandard } = ctx;
+  const existingText = [
+    ...(existingStandard?.learnedRules ?? []),
+    ...(existingStandard?.learnedExemptions ?? []),
+  ].join("\n");
+
+  const out: DistilledCandidate[] = [];
+
+  // exempt:扫误判记录
+  for (const sig of EXEMPT_SIGNALS) {
+    if (existingText.includes(sig.text)) continue; // 去重
+    const supporting = feedback.filter(
+      (f) => f.isFalsePositive && containsAny(f.falsePositiveNote ?? "", sig.kw)
+    );
+    if (supporting.length >= 2) {
+      out.push({
+        kind: "exempt",
+        text: sig.text,
+        rationale: `共 ${supporting.length} 条误判记录反复出现「${sig.kw[0]}」类情形,AI 过度报错。`,
+        supportingCaseIds: supporting.map((f) => f.caseId).filter((id): id is string => !!id),
+        confidence: 0.8,
+      });
+    }
+  }
+
+  // reinforce:扫人工改意见
+  for (const sig of REINFORCE_SIGNALS) {
+    if (existingText.includes(sig.text)) continue; // 去重
+    const supporting = feedback.filter(
+      (f) => !!f.finalOpinion && containsAny(f.finalOpinion, sig.kw)
+    );
+    if (supporting.length >= 2) {
+      out.push({
+        kind: "reinforce",
+        text: sig.text,
+        rationale: `共 ${supporting.length} 条人工意见反复补上「${sig.kw[0]}」相关要素,应固化为必审项。`,
+        supportingCaseIds: supporting.map((f) => f.caseId).filter((id): id is string => !!id),
+        riskLevel: sig.riskLevel,
+        confidence: 0.78,
+      });
+    }
+  }
+
+  return out;
+}
 
 const ORDINALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 

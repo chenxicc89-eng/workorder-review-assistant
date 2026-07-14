@@ -23,6 +23,9 @@ const ruleStandardSchema = z.object({
   examples: z
     .object({ good: z.array(z.string()).optional(), bad: z.array(z.string()).optional() })
     .optional(),
+  // Tier3:从反馈提炼采纳的准则。放行,否则经规范编辑器保存时会被 zod strip 丢失。
+  learnedRules: z.array(z.string()).optional(),
+  learnedExemptions: z.array(z.string()).optional(),
 });
 
 const upsertSchema = z.object({

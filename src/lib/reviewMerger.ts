@@ -105,20 +105,60 @@ export function buildReviewOpinion(
   });
   const problemPart = clauses.join(";");
 
-  // 整改落点:汇总各问题 requirement 里的关键落点(去重、精简)
+  // 整改落点:汇总各问题 requirement 里的关键落点(去重、精简、按风险排序)
   const template = standard?.standardOpinionTemplates?.[0];
+  const seenReq = new Set<string>();
+  const requirements = sorted
+    .map((it) => it.requirement?.trim())
+    .filter((r): r is string => {
+      if (!r) return false;
+      const key = r.replace(/[\s。;;]/g, "");
+      if (seenReq.has(key)) return false;
+      seenReq.add(key);
+      return true;
+    });
+  const advicePart = requirements.length
+    ? requirements
+        .slice(0, ORDINALS.length)
+        .map((r, i) => `${ORDINALS[i]}、${r.replace(/[。;;]$/, "")}`)
+        .join(";")
+    : "";
   const tail = "请承办单位补充完善相关情况后重新反馈。";
 
-  const generated = `经审核,该回单存在以下问题:${problemPart}。${tail}`;
+  const problemSentence = `经审核,该回单存在以下问题:${problemPart}。`;
+  const adviceSentence = advicePart ? `建议整改:${advicePart}。` : "";
 
-  // 若 AI 给出的意见也符合"经审核…"体且更具体,则优先采用 AI 意见,
-  // 否则用规则化生成结果保证格式稳定。
-  if (aiOpinion && aiOpinion.trim().startsWith("经审核") && aiOpinion.length >= generated.length * 0.6) {
-    return aiOpinion.trim();
-  }
-  // template 仅作为兜底占位提示,这里不强依赖(保留扩展)
+  // 问题陈述主体:AI 意见若也符合"经审核…"体且足够具体(长度不低于规则问题
+  // 陈述的 0.6 倍),优先用 AI 的表述;否则用规则化生成结果保证格式稳定。
+  // 注意与整改建议长度解耦——阈值只跟"问题陈述"比,不受整改建议长短影响。
+  const useAi =
+    !!aiOpinion &&
+    aiOpinion.trim().startsWith("经审核") &&
+    aiOpinion.trim().length >= problemSentence.length * 0.6;
+  // 采用 AI 意见时,去掉其末尾可能自带的"请承办单位…反馈/完善"类收尾句,
+  // 避免与下方统一追加的 tail 重复。
+  const opinionBody = useAi
+    ? aiOpinion!
+        .trim()
+        // 去掉末尾自带的"请…反馈/完善"类收尾句(连同其前的分隔标点),
+        // 再补回句号,保证主体以完整句结束。
+        .replace(/[\n,;;。]*请[^。\n]*(反馈|完善|修改|补充)[^。\n]*。?\s*$/, "")
+        .trim()
+        .replace(/[^。!?;;]$/, "$&。")
+    : problemSentence;
+
+  // AI 意见(按 prompt 要求)本应已含整改建议;若已含,则不再追加规则汇总段,
+  // 避免整改内容重复。仅当采用规则主体、或 AI 主体里检测不到整改类表述时,
+  // 才用规则汇总的 requirement 兜底,确保审核意见里始终包含"怎么改"。
+  const bodyHasAdvice = /建议整改|整改建议|应当?(补充|完善|修改|明确)|需(补充|完善|修改|明确)/.test(
+    opinionBody
+  );
+  const advice = useAi && bodyHasAdvice ? "" : adviceSentence;
+
+  // 问题(含整改)、整改建议兜底段(如需)、收尾语各占一行,便于阅读与直接复制。
+  // template 仅作为兜底占位提示,这里不强依赖(保留扩展)。
   void template;
-  return generated;
+  return [opinionBody, advice, tail].filter(Boolean).join("\n");
 }
 
 /** 生成摘要标签:取各问题 category(去重、限量) */

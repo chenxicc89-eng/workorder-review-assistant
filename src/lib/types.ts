@@ -25,6 +25,30 @@ export interface ReviewIssue {
   source: IssueSource;
 }
 
+/** 本次审核引用的单条历史反馈的摘要(用于让"学习"对用户可见) */
+export interface LearningRef {
+  /** 该反馈来自的工单类型 */
+  orderType: string;
+  /** 是否与当前工单同类型(跨类参考会标记为 false) */
+  sameType: boolean;
+  /** 语义相似度 0~1(仅 Tier2 语义检索时有;Tier1 recency 回退时为 undefined) */
+  similarity?: number;
+  /** 一句话要点:误判原因或人工意见的摘要 */
+  gist: string;
+}
+
+/** 本次审核的"学习依据"汇总:参考了哪些历史反馈 / 是否应用了提炼准则 */
+export interface LearningContext {
+  /** 本次注入 prompt 的历史纠错条数 */
+  usedCorrectionCount: number;
+  /** 引用的历史反馈摘要(供前端展示) */
+  usedCorrections: LearningRef[];
+  /** 生效规范的名称(内置默认或库中规范) */
+  appliedStandardName?: string;
+  /** 生效规范中"从反馈提炼的准则/豁免"条数(Tier3;当前无则为 0) */
+  distilledRuleCount: number;
+}
+
 /** 最终审核结果(AI 与系统统一输出结构) */
 export interface ReviewResult {
   conclusion: ReviewConclusion;
@@ -43,6 +67,8 @@ export interface ReviewResult {
   confidence: number;
   /** 运行模式提示:是否走了真实 AI(用于前端展示) */
   aiMode?: "real" | "mock";
+  /** 本次审核的学习依据(引用了哪些历史反馈/准则),让持续学习对用户可见 */
+  learningContext?: LearningContext;
 }
 
 /** 工单输入 */
@@ -88,6 +114,47 @@ export interface RuleStandard {
     good?: string[];
     bad?: string[];
   };
+  /**
+   * Tier3:从历史反馈提炼、并经人工采纳的「加强准则」。
+   * 随规范块(formatStandard)一同注入审核 prompt,不占 few-shot 预算 → 永久生效。
+   */
+  learnedRules?: string[];
+  /**
+   * Tier3:从历史误判提炼、并经人工采纳的「豁免准则」(以下情形不应报为问题)。
+   */
+  learnedExemptions?: string[];
+}
+
+/** Tier3:一条学习到的规则(蒸馏候选 / 已采纳规则)的类型 */
+export type LearnedRuleKind = "reinforce" | "exempt";
+export type LearnedRuleStatus = "pending" | "adopted" | "rejected";
+
+/** Tier3:LLM 从历史反馈蒸馏出的候选规则(尚未落库前的形状) */
+export interface DistilledCandidate {
+  /** reinforce=加强规则(补 AI 漏报);exempt=豁免规则(止 AI 误报) */
+  kind: LearnedRuleKind;
+  /** 规则正文(一句可直接放进规范的表述) */
+  text: string;
+  /** 提炼理由(给人工审核看,不进审核 prompt) */
+  rationale: string;
+  /** 支撑该规则的历史案例 id(溯源) */
+  supportingCaseIds: string[];
+  /** 加强规则的建议风险等级(exempt 可空) */
+  riskLevel?: RiskLevel;
+  /** 蒸馏置信度 0~1 */
+  confidence: number;
+}
+
+/** Tier3:一条学习规则记录(GET /api/learning/rules 列表项 / 详情) */
+export interface LearnedRuleRecord extends DistilledCandidate {
+  id: string;
+  orderType: string;
+  status: LearnedRuleStatus;
+  /** 同一批「生成候选」的批次标识,便于按批查看 */
+  sourceBatchId: string;
+  createdAt: string;
+  updatedAt: string;
+  adoptedAt?: string | null;
 }
 
 // ---- 与后端 API 交互用的辅助类型 ----
