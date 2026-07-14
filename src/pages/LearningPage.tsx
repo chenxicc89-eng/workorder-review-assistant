@@ -18,7 +18,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { Loader2, Sparkles, Check, X, Undo2, GraduationCap } from "lucide-react";
+import { HelpDialog } from "@/components/HelpDialog";
+import {
+  Loader2,
+  Sparkles,
+  Check,
+  X,
+  Undo2,
+  GraduationCap,
+  ChevronDown,
+  ChevronRight,
+  HelpCircle,
+} from "lucide-react";
 
 // ==========================================================================
 // 学习中心(Tier3):把历史反馈蒸馏为候选常驻规则,人工采纳后写入生效规范。
@@ -43,6 +54,8 @@ export function LearningPage() {
   const [loading, setLoading] = React.useState(false);
   const [generating, setGenerating] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -137,10 +150,64 @@ export function LearningPage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          从「{orderType}」的历史人工纠错(误判 / 人工改意见)中提炼可长期复用的审核准则。
-          <b className="text-foreground">加强准则</b>补 AI 漏报、<b className="text-foreground">豁免准则</b>止 AI 误报;
-          采纳后即写入生效规范、影响此后每一次审核,且不占用示例预算 —— 反馈由此被永久记住。
+        <CardContent className="space-y-2 text-xs text-muted-foreground">
+          <p>
+            从「{orderType}」的历史人工纠错(误判 / 人工改意见)中提炼可长期复用的审核准则。
+            <b className="text-foreground">加强准则</b>补 AI 漏报、<b className="text-foreground">豁免准则</b>止 AI 误报;
+            采纳后即写入生效规范、影响此后每一次审核,且不占用示例预算 —— 反馈由此被永久记住。
+          </p>
+
+          {/* 可折叠的三步使用说明 */}
+          <div className="rounded-md border">
+            <button
+              type="button"
+              onClick={() => setGuideOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 px-3 py-2 text-left font-medium text-foreground"
+            >
+              {guideOpen ? (
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              )}
+              <span className="flex-1">怎么用?(三步)</span>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHelpOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.stopPropagation();
+                    setHelpOpen(true);
+                  }
+                }}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 font-normal text-primary hover:bg-primary/10"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+                查看完整帮助
+              </span>
+            </button>
+            {guideOpen && (
+              <div className="space-y-2 border-t px-3 py-2.5">
+                <ol className="ml-4 list-decimal space-y-1.5">
+                  <li>
+                    <b className="text-foreground">日常纠正</b>:审核时点「标记误判」并填写错在哪,或直接修改审核意见后保存 —— 正常审核时随手做即可。
+                  </li>
+                  <li>
+                    <b className="text-foreground">生成候选</b>:回到本页,选工单类型后点右上「生成候选准则」,系统把你反复出现的纠正归纳成候选规则。
+                  </li>
+                  <li>
+                    <b className="text-foreground">你来拍板</b>:看每条候选的理由与支撑案例数,点「采纳」即写入规范并从下一单起生效;不合适则「驳回」;已采纳的可「撤回」。
+                  </li>
+                </ol>
+                <p className="rounded bg-primary/5 px-2.5 py-1.5 text-primary">
+                  系统绝不会自动改规则,一定是你点「采纳」才生效;只有<b>反复出现</b>的纠正才会被提炼。
+                </p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -203,6 +270,8 @@ export function LearningPage() {
           </Card>
         </>
       )}
+
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} initialSection="learning" />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import * as React from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils/cn";
-import { ClipboardCheck, History, BookOpen, GraduationCap } from "lucide-react";
+import { ClipboardCheck, History, BookOpen, GraduationCap, HelpCircle } from "lucide-react";
 import { getHealth, type HealthInfo } from "@/lib/api";
+import { HelpDialog } from "@/components/HelpDialog";
 
 const NAV = [
   { to: "/", label: "工单审核", icon: ClipboardCheck, end: true },
@@ -13,6 +14,7 @@ const NAV = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [health, setHealth] = React.useState<HealthInfo | null>(null);
+  const [helpOpen, setHelpOpen] = React.useState(false);
 
   React.useEffect(() => {
     getHealth()
@@ -68,12 +70,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          {/* 宽屏才显示的完整 AI 状态(含模型名) */}
-          <div className="ml-auto hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+          {/* 右侧:AI 状态(宽屏含模型名)+ 帮助入口 */}
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground sm:ml-auto">
             {health && (
               <span
                 className={cn(
-                  "rounded-full border px-2 py-0.5",
+                  "hidden rounded-full border px-2 py-0.5 sm:inline",
                   health.aiMode === "real"
                     ? "border-emerald-500/40 text-emerald-600"
                     : "border-border"
@@ -82,10 +84,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 AI:{health.aiMode === "real" ? `真实(${health.model})` : "Mock 模式"}
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="使用帮助"
+            >
+              <HelpCircle className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">帮助</span>
+            </button>
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-5">{children}</main>
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }
