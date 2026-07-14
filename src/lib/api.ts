@@ -7,6 +7,7 @@ import type {
   ReviewResult,
   RuleStandard,
   SaveCasePayload,
+  StandardExtractResult,
   WorkOrderCaseRecord,
   WorkOrderInput,
 } from "./types";
@@ -146,6 +147,26 @@ export function toggleStandard(id: string, enabled: boolean): Promise<StandardLi
 
 export function deleteStandard(id: string): Promise<void> {
   return request<void>(`/api/standards/${id}`, { method: "DELETE" });
+}
+
+/** 从模板文本抽取规范(预览,不写库)。抽取是 LLM 调用,可能较慢。 */
+export function extractStandardsFromText(text: string): Promise<StandardExtractResult> {
+  return request<StandardExtractResult>(
+    "/api/standards/extract",
+    { method: "POST", body: JSON.stringify({ text }) },
+    {
+      timeoutMs: 58_000,
+      timeoutMessage: "模板识别超时(内容较多时抽取较慢),请精简模板或稍后重试。",
+    }
+  );
+}
+
+/** 确认写入:按工单类型覆盖导入一批规范 */
+export function importStandards(standards: RuleStandard[]): Promise<StandardListItem[]> {
+  return request<StandardListItem[]>("/api/standards/import", {
+    method: "POST",
+    body: JSON.stringify({ standards }),
+  });
 }
 
 // ---- learning(学习中心 / Tier3)----

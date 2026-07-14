@@ -6,9 +6,10 @@ import type {
   ReviewIssue,
   OcrExtractResult,
   DistilledCandidate,
+  StandardExtractResult,
 } from "../types";
 
-export type { DistilledCandidate } from "../types";
+export type { DistilledCandidate, StandardExtractResult } from "../types";
 
 // ==========================================================================
 // AI Provider 抽象层
@@ -105,6 +106,11 @@ export interface AiProvider {
    * 返回的候选不含 id/status,由 learningService 落库为 pending。
    */
   distill(ctx: DistillContext): Promise<DistilledCandidate[]>;
+  /**
+   * 从模板文件(回单范例)解析出的文本中,反推出一个或多个工单类型的规范。
+   * 由「规范库 → 从模板导入」手动触发,不在审核热路径上。抽取结果需人工预览确认后才入库。
+   */
+  extractStandards(text: string): Promise<StandardExtractResult>;
 }
 
 // ---- provider 选择 ----

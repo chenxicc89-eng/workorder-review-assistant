@@ -126,6 +126,30 @@ export async function upsertStandard(input: UpsertStandardInput): Promise<Standa
   return rowToStandard(created);
 }
 
+/**
+ * 按工单类型 upsert(用于「从模板导入」的覆盖策略):
+ * 该类型已有 enabled 记录 → 更新它(覆盖旧规范);否则新建。
+ * 传入的 standard 会被强制对齐 orderType,并清掉 id(以行为准)。
+ */
+export async function upsertStandardByOrderType(
+  orderType: string,
+  name: string,
+  standard: RuleStandard
+): Promise<StandardRow> {
+  const existing = await prisma.standardRule.findFirst({
+    where: { orderType, enabled: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  const normalized: RuleStandard = { ...standard, orderType, name };
+  return upsertStandard({
+    id: existing?.id, // 有则覆盖更新,无则新建
+    orderType,
+    name,
+    standard: normalized,
+    enabled: true,
+  });
+}
+
 /** 启用/停用 */
 export async function setStandardEnabled(id: string, enabled: boolean): Promise<StandardRow> {
   const updated = await prisma.standardRule.update({

@@ -125,6 +125,16 @@ export interface RuleStandard {
   learnedExemptions?: string[];
 }
 
+/** 从模板文件(回单范例)AI 抽取出的规范结果(入库前的预览形态) */
+export interface StandardExtractResult {
+  /** 抽取出的一个或多个类型规范;id 留空,入库时由服务端定 */
+  standards: RuleStandard[];
+  /** AI 对不确定项 / mock 提示的说明 */
+  notes?: string;
+  /** 抽取置信度 0~1 */
+  confidence: number;
+}
+
 /** Tier3:一条学习到的规则(蒸馏候选 / 已采纳规则)的类型 */
 export type LearnedRuleKind = "reinforce" | "exempt";
 export type LearnedRuleStatus = "pending" | "adopted" | "rejected";

@@ -5,9 +5,11 @@ import type {
   RawReviewOutput,
   DistillContext,
   DistilledCandidate,
+  StandardExtractResult,
 } from "./providers";
-import type { RiskLevel, OcrExtractResult } from "../types";
+import type { RiskLevel, OcrExtractResult, RuleStandard } from "../types";
 import { containsAny, matchedKeywords } from "../utils/textExtract";
+import { ORDER_TYPES, getDefaultStandard } from "../standards/defaultStandards";
 
 // ==========================================================================
 // Mock provider(无 API Key / AI_ENABLED=false 时使用)
@@ -189,7 +191,33 @@ export const mockProvider: AiProvider = {
   async distill(ctx: DistillContext): Promise<DistilledCandidate[]> {
     return mockDistill(ctx);
   },
+
+  async extractStandards(text: string): Promise<StandardExtractResult> {
+    return mockExtractStandards(text);
+  },
 };
+
+// --------------------------------------------------------------------------
+// Mock 规范抽取:确定性地按"文本里出现了哪些工单类型名"来产出规范骨架,
+// 复用内置默认规范作为骨架,保证无 Key 也能演示「从模板导入」全流程。
+// --------------------------------------------------------------------------
+function mockExtractStandards(text: string): StandardExtractResult {
+  const hit = (ORDER_TYPES as readonly string[]).filter(
+    (t) => t !== "其他" && text.includes(t)
+  );
+  // 一个类型都没提到时,兜底给"其他"通用规范,避免空手而归
+  const types = hit.length ? hit : ["其他"];
+  const standards: RuleStandard[] = types.map((t) => {
+    const base = getDefaultStandard(t);
+    // id 留空(入库时定),其余用内置默认骨架
+    return { ...base, id: "" };
+  });
+  return {
+    standards,
+    notes: "Mock 模式未真正解析模板,已按文本中出现的工单类型填入内置规范骨架供演示。请配置 AI_ENABLED=true 及文本模型后重试以真实抽取。",
+    confidence: 0.5,
+  };
+}
 
 // --------------------------------------------------------------------------
 // Mock 蒸馏:确定性关键词聚类,保证无 Key 开发也能演示/测试「学习中心」。

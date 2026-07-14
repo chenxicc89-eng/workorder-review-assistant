@@ -6,9 +6,14 @@ import type {
   RawReviewOutput,
   DistillContext,
   DistilledCandidate,
+  StandardExtractResult,
 } from "./providers";
 import { REVIEW_SYSTEM_PROMPT, buildReviewUserPrompt } from "../prompts/reviewPrompt";
 import { DISTILL_SYSTEM_PROMPT, buildDistillUserPrompt } from "../prompts/distillPrompt";
+import {
+  STANDARD_EXTRACT_SYSTEM_PROMPT,
+  buildStandardExtractUserPrompt,
+} from "../prompts/standardExtractPrompt";
 import {
   VERIFY_SYSTEM_PROMPT,
   buildVerifyUserPrompt,
@@ -20,7 +25,7 @@ import {
   buildTextExtractUserPrompt,
 } from "../prompts/ocrPrompt";
 import { ORDER_TYPES } from "../standards/defaultStandards";
-import type { RiskLevel, ReviewConclusion, OcrExtractResult } from "../types";
+import type { RiskLevel, ReviewConclusion, OcrExtractResult, RuleStandard } from "../types";
 
 // ==========================================================================
 // OpenAI 兼容 provider(真实大模型)
@@ -68,6 +73,57 @@ function normalizeDistill(raw: any, feedbackCaseIds: (string | undefined)[]): Di
     });
   }
   return out;
+}
+
+/** 把任意值规整为 string[](非数组→空;元素转字符串去空) */
+function strArray(v: any): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => String(x ?? "").trim()).filter(Boolean);
+}
+
+/**
+ * 校正规范抽取输出:各字段规整为 string[]、剔除空规范、confidence clamp。
+ * orderType 照模板字面保留(允许枚举外的新类型,由用户在预览时确认);id 一律留空(入库时定)。
+ */
+function normalizeStandards(raw: any): StandardExtractResult {
+  const list = Array.isArray(raw?.standards) ? raw.standards : [];
+  const standards: RuleStandard[] = [];
+  for (const s of list) {
+    const orderType = String(s?.orderType ?? "").trim();
+    if (!orderType) continue; // 无类型的行无法入库,丢弃
+    const std: RuleStandard = {
+      id: "",
+      orderType,
+      name: String(s?.name ?? `${orderType}回单规范`).trim() || `${orderType}回单规范`,
+      requiredItems: strArray(s?.requiredItems),
+      highRiskIssues: strArray(s?.highRiskIssues),
+      mediumRiskIssues: strArray(s?.mediumRiskIssues),
+      lowRiskIssues: strArray(s?.lowRiskIssues),
+      standardRequirements: strArray(s?.standardRequirements),
+      standardOpinionTemplates: strArray(s?.standardOpinionTemplates),
+    };
+    // E/F「不计入…」→ 豁免准则
+    const exemptions = strArray(s?.learnedExemptions);
+    if (exemptions.length) std.learnedExemptions = exemptions;
+    const good = strArray(s?.examples?.good);
+    if (good.length) std.examples = { good };
+    // 完全空的规范(啥要素/要求/豁免/风险都没抽到)无意义,丢弃
+    const anyContent =
+      std.requiredItems.length ||
+      std.standardRequirements.length ||
+      (std.learnedExemptions?.length ?? 0) ||
+      std.highRiskIssues.length ||
+      std.mediumRiskIssues.length ||
+      std.lowRiskIssues.length;
+    if (anyContent) standards.push(std);
+  }
+  let confidence = typeof raw?.confidence === "number" ? raw.confidence : 0.7;
+  confidence = Math.max(0, Math.min(1, confidence));
+  return {
+    standards,
+    notes: raw?.notes ? String(raw.notes) : undefined,
+    confidence: Math.round(confidence * 100) / 100,
+  };
 }
 
 /** 宽松解析并校正大模型返回的 JSON,保证结构合法 */
@@ -264,6 +320,22 @@ export function createOpenAiProvider(env: AiEnvConfig): AiProvider {
       const content = resp.choices?.[0]?.message?.content ?? "";
       if (!content) throw new Error("AI 返回内容为空");
       return normalizeDistill(parseJson(content), ctx.feedback.map((f) => f.caseId));
+    },
+
+    async extractStandards(text: string): Promise<StandardExtractResult> {
+      // 走文本模型(非视觉),JSON 模式。手动触发、不在审核热路径上。
+      const resp = await client.chat.completions.create({
+        model: env.model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: STANDARD_EXTRACT_SYSTEM_PROMPT },
+          { role: "user", content: buildStandardExtractUserPrompt(ORDER_TYPES, text) },
+        ],
+      });
+      const content = resp.choices?.[0]?.message?.content ?? "";
+      if (!content) throw new Error("AI 返回内容为空");
+      return normalizeStandards(parseJson(content));
     },
   };
 }

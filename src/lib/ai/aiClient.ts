@@ -1,6 +1,6 @@
 import { getProvider, type AiProvider, type AiReviewContext, type RawReviewOutput } from "./providers";
 import { mockProvider } from "./mockProvider";
-import type { OcrExtractResult } from "../types";
+import type { OcrExtractResult, StandardExtractResult } from "../types";
 
 // ==========================================================================
 // AI Client —— 三段式审核的统一入口
@@ -102,6 +102,32 @@ export async function runExtractText(text: string): Promise<OcrExtractResult> {
   } catch (err) {
     throw new Error(
       `文档识别失败:${(err as Error).message}。请确认已配置文本模型(AI_API_KEY),或改用手动粘贴。`
+    );
+  }
+}
+
+/**
+ * 从模板文本抽取规范(走文本模型,不依赖视觉)。
+ * - mock → 返回按类型命中的内置规范骨架;
+ * - 真实 provider → 直接调 extractStandards,失败抛可读错误。
+ */
+export async function runExtractStandards(text: string): Promise<StandardExtractResult> {
+  if (!text.trim()) throw new Error("文档内容为空");
+  let provider: AiProvider;
+  try {
+    provider = await getProvider();
+  } catch {
+    provider = mockProvider;
+  }
+
+  if (provider.mode === "mock") {
+    return provider.extractStandards(text);
+  }
+  try {
+    return await provider.extractStandards(text);
+  } catch (err) {
+    throw new Error(
+      `模板识别失败:${(err as Error).message}。请确认已配置文本模型(AI_API_KEY),或稍后重试。`
     );
   }
 }
