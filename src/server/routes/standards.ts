@@ -6,6 +6,9 @@ import {
   setStandardEnabled,
   upsertStandard,
   upsertStandardByOrderType,
+  listStandardVersions,
+  rollbackStandardVersion,
+  evaluateLatestStandardVersions,
 } from "../services/standardService";
 import { runExtractStandards } from "../../lib/ai/aiClient";
 
@@ -121,6 +124,30 @@ standardsRouter.post("/import", async (req, res) => {
   } catch (err) {
     console.error("导入规范失败:", err);
     res.status(500).json({ error: "导入规范失败", message: (err as Error).message });
+  }
+});
+
+standardsRouter.get("/:id/versions", async (req, res) => {
+  try {
+    res.json(await listStandardVersions(req.params.id));
+  } catch (err) {
+    res.status(500).json({ error: "查询规范版本失败", message: (err as Error).message });
+  }
+});
+
+standardsRouter.post("/versions/:versionId/rollback", async (req, res) => {
+  try {
+    res.json(await rollbackStandardVersion(req.params.versionId));
+  } catch (err) {
+    res.status(404).json({ error: (err as Error).message || "回滚失败" });
+  }
+});
+
+standardsRouter.post("/:id/evaluate", async (req, res) => {
+  try {
+    res.json(await evaluateLatestStandardVersions(req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "规范评估失败" });
   }
 });
 

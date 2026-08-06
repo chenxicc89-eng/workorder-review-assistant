@@ -36,7 +36,9 @@ import {
   ScanText,
   FileText,
   FileSpreadsheet,
+  History,
 } from "lucide-react";
+import { StandardVersionDialog } from "@/components/StandardVersionDialog";
 
 const EMPTY_STANDARD: RuleStandard = {
   id: "",
@@ -56,6 +58,7 @@ export function StandardsPage() {
   const [loading, setLoading] = React.useState(false);
   const [editing, setEditing] = React.useState<StandardListItem | "new" | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
+  const [versionItem, setVersionItem] = React.useState<StandardListItem | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -165,6 +168,11 @@ export function StandardsPage() {
                   >
                     查看 / 编辑
                   </Button>
+                  {!item.id.startsWith("std-") && (
+                    <Button size="sm" variant="ghost" className="mt-3" onClick={() => setVersionItem(item)}>
+                      <History /> 版本
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -193,6 +201,16 @@ export function StandardsPage() {
           onImported={() => {
             setImportOpen(false);
             void load(); // 覆盖导入后重新拉列表(可能新增或更新多条)
+          }}
+        />
+      )}
+      {versionItem && (
+        <StandardVersionDialog
+          item={versionItem}
+          onClose={() => setVersionItem(null)}
+          onRolledBack={(updated) => {
+            setItems((prev) => prev.map((item) => item.id === updated.id ? updated : item));
+            setVersionItem(null);
           }}
         />
       )}

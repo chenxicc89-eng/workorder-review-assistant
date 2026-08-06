@@ -7,6 +7,8 @@ import type {
   DistillContext,
   DistilledCandidate,
   StandardExtractResult,
+  ApprovedDistillContext,
+  StandardEvaluationContext,
 } from "./providers";
 import { REVIEW_SYSTEM_PROMPT, buildReviewUserPrompt } from "../prompts/reviewPrompt";
 import { DISTILL_SYSTEM_PROMPT, buildDistillUserPrompt } from "../prompts/distillPrompt";
@@ -26,6 +28,16 @@ import {
 } from "../prompts/ocrPrompt";
 import { ORDER_TYPES } from "../standards/defaultStandards";
 import type { RiskLevel, ReviewConclusion, OcrExtractResult, RuleStandard } from "../types";
+import type { ApprovedDistilledCandidate, LearnedCandidateType } from "../types";
+import type { StandardEvaluation } from "../types";
+import {
+  APPROVED_DISTILL_SYSTEM_PROMPT,
+  buildApprovedDistillUserPrompt,
+} from "../prompts/approvedDistillPrompt";
+import {
+  STANDARD_EVALUATION_SYSTEM_PROMPT,
+  buildStandardEvaluationPrompt,
+} from "../prompts/standardEvaluationPrompt";
 
 // ==========================================================================
 // OpenAI 兼容 provider(真实大模型)
@@ -38,6 +50,12 @@ import type { RiskLevel, ReviewConclusion, OcrExtractResult, RuleStandard } from
 const VALID_RISK: RiskLevel[] = ["高", "中", "低"];
 const VALID_CONCLUSION: ReviewConclusion[] = ["通过", "建议修改", "建议退回"];
 const VALID_KIND = ["reinforce", "exempt"] as const;
+const VALID_APPROVED_TYPE: LearnedCandidateType[] = [
+  "required_item",
+  "requirement",
+  "exemption",
+  "good_example",
+];
 
 /**
  * 校正蒸馏输出:把 LLM 返回的 candidates 归一化为 DistilledCandidate[]。
@@ -54,21 +72,57 @@ function normalizeDistill(raw: any, feedbackCaseIds: (string | undefined)[]): Di
     const indexes: number[] = Array.isArray(c?.supportingIndexes)
       ? c.supportingIndexes.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
       : [];
-    const supportingCaseIds = Array.from(
-      new Set(
+    const supportingCaseIds: string[] = Array.from(
+      new Set<string>(
         indexes
           .map((i) => feedbackCaseIds[i - 1]) // 1-based → 0-based
           .filter((id): id is string => !!id)
       )
     );
+    if (supportingCaseIds.length < 1) continue;
     let confidence = typeof c?.confidence === "number" ? c.confidence : 0.7;
     confidence = Math.max(0, Math.min(1, confidence));
+    if (supportingCaseIds.length === 1) confidence = Math.min(confidence, 0.6);
     out.push({
       kind,
       text,
       rationale: String(c?.rationale ?? "").trim(),
       supportingCaseIds,
       riskLevel: VALID_RISK.includes(c?.riskLevel) ? c.riskLevel : undefined,
+      confidence: Math.round(confidence * 100) / 100,
+    });
+  }
+  return out;
+}
+
+function normalizeApprovedDistill(
+  raw: any,
+  caseIds: string[]
+): ApprovedDistilledCandidate[] {
+  const list = Array.isArray(raw?.candidates) ? raw.candidates : [];
+  const out: ApprovedDistilledCandidate[] = [];
+  for (const c of list) {
+    const candidateType = VALID_APPROVED_TYPE.includes(c?.candidateType)
+      ? c.candidateType
+      : "requirement";
+    const text = String(c?.text ?? "").trim();
+    if (!text) continue;
+    const indexes = Array.isArray(c?.supportingIndexes)
+      ? c.supportingIndexes.map(Number).filter(Number.isFinite)
+      : [];
+    const mappedCaseIds: string[] = indexes
+      .map((i: number) => caseIds[i - 1])
+      .filter((id: string | undefined): id is string => Boolean(id));
+    const supportingCaseIds = Array.from(new Set(mappedCaseIds));
+    if (supportingCaseIds.length < 1) continue;
+    let confidence = Math.max(0, Math.min(1, Number(c?.confidence) || 0.7));
+    if (supportingCaseIds.length === 1) confidence = Math.min(confidence, 0.6);
+    out.push({
+      kind: candidateType === "exemption" ? "exempt" : "reinforce",
+      candidateType,
+      text,
+      rationale: String(c?.rationale ?? "").trim(),
+      supportingCaseIds,
       confidence: Math.round(confidence * 100) / 100,
     });
   }
@@ -320,6 +374,50 @@ export function createOpenAiProvider(env: AiEnvConfig): AiProvider {
       const content = resp.choices?.[0]?.message?.content ?? "";
       if (!content) throw new Error("AI 返回内容为空");
       return normalizeDistill(parseJson(content), ctx.feedback.map((f) => f.caseId));
+    },
+
+    async distillApproved(ctx: ApprovedDistillContext): Promise<ApprovedDistilledCandidate[]> {
+      const resp = await client.chat.completions.create({
+        model: env.model,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: APPROVED_DISTILL_SYSTEM_PROMPT },
+          { role: "user", content: buildApprovedDistillUserPrompt(ctx) },
+        ],
+      });
+      const content = resp.choices?.[0]?.message?.content ?? "";
+      if (!content) throw new Error("AI 返回内容为空");
+      return normalizeApprovedDistill(parseJson(content), ctx.examples.map((e) => e.caseId));
+    },
+
+    async evaluateStandards(ctx: StandardEvaluationContext): Promise<StandardEvaluation> {
+      const resp = await client.chat.completions.create({
+        model: env.model,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: STANDARD_EVALUATION_SYSTEM_PROMPT },
+          { role: "user", content: buildStandardEvaluationPrompt(ctx) },
+        ],
+      });
+      const raw = parseJson(resp.choices?.[0]?.message?.content ?? "{}");
+      const clamp = (value: unknown, max: number) =>
+        Math.round(Math.max(0, Math.min(max, Number(value) || 0)));
+      return {
+        orderType: ctx.orderType,
+        sampleCount: ctx.examples.length,
+        previousVersion: ctx.previousVersion,
+        currentVersion: ctx.currentVersion,
+        before: {
+          passCount: clamp(raw?.before?.passCount, ctx.examples.length),
+          issueCount: Math.max(0, Number(raw?.before?.issueCount) || 0),
+        },
+        after: {
+          passCount: clamp(raw?.after?.passCount, ctx.examples.length),
+          issueCount: Math.max(0, Number(raw?.after?.issueCount) || 0),
+        },
+      };
     },
 
     async extractStandards(text: string): Promise<StandardExtractResult> {

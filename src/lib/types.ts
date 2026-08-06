@@ -138,6 +138,13 @@ export interface StandardExtractResult {
 /** Tier3:一条学习到的规则(蒸馏候选 / 已采纳规则)的类型 */
 export type LearnedRuleKind = "reinforce" | "exempt";
 export type LearnedRuleStatus = "pending" | "adopted" | "rejected";
+export type LearnedRuleSource = "correction" | "approved_case";
+export type LearnedCandidateType =
+  | "reinforce"
+  | "exemption"
+  | "required_item"
+  | "requirement"
+  | "good_example";
 
 /** Tier3:LLM 从历史反馈蒸馏出的候选规则(尚未落库前的形状) */
 export interface DistilledCandidate {
@@ -165,6 +172,75 @@ export interface LearnedRuleRecord extends DistilledCandidate {
   createdAt: string;
   updatedAt: string;
   adoptedAt?: string | null;
+  sourceType: LearnedRuleSource;
+  candidateType: LearnedCandidateType;
+  conflictStatus: "none" | "duplicate" | "conflict";
+  conflictDetail?: string | null;
+}
+
+export interface StandardVersionRecord {
+  id: string;
+  standardRuleId: string;
+  orderType: string;
+  version: number;
+  standard: RuleStandard;
+  source: "manual" | "template_import" | "learning" | "rollback";
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface StandardDiff {
+  added: Partial<Record<keyof RuleStandard, string[]>>;
+  removed: Partial<Record<keyof RuleStandard, string[]>>;
+}
+
+export interface StandardEvaluation {
+  orderType: string;
+  sampleCount: number;
+  previousVersion?: number;
+  currentVersion?: number;
+  before: { passCount: number; issueCount: number };
+  after: { passCount: number; issueCount: number };
+}
+
+/** 批量导入前端提交的一条已通过工单。 */
+export interface ApprovedCaseInput {
+  orderNo: string;
+  orderType: string;
+  citizenAppeal: string;
+  replyContent: string;
+  evaluationReport?: string;
+  unit?: string;
+}
+
+export interface ApprovedCaseRecord extends ApprovedCaseInput {
+  id: string;
+  batchId: string;
+  sourceFile?: string | null;
+  createdAt: string;
+}
+
+export interface ImportBatchRecord {
+  id: string;
+  name: string;
+  fileName?: string | null;
+  totalRows: number;
+  importedRows: number;
+  rejectedRows: number;
+  createdAt: string;
+}
+
+/** 从已通过样本提炼前传给 AI 的轻量证据。 */
+export interface ApprovedLearningExample {
+  caseId: string;
+  orderNo: string;
+  citizenAppeal: string;
+  replyContent: string;
+  evaluationReport?: string;
+}
+
+export interface ApprovedDistilledCandidate extends DistilledCandidate {
+  candidateType: Exclude<LearnedCandidateType, "reinforce">;
 }
 
 // ---- 与后端 API 交互用的辅助类型 ----

@@ -6,8 +6,16 @@ import type {
   DistillContext,
   DistilledCandidate,
   StandardExtractResult,
+  ApprovedDistillContext,
+  StandardEvaluationContext,
 } from "./providers";
-import type { RiskLevel, OcrExtractResult, RuleStandard } from "../types";
+import type {
+  RiskLevel,
+  OcrExtractResult,
+  RuleStandard,
+  ApprovedDistilledCandidate,
+  StandardEvaluation,
+} from "../types";
 import { containsAny, matchedKeywords } from "../utils/textExtract";
 import { ORDER_TYPES, getDefaultStandard } from "../standards/defaultStandards";
 
@@ -192,10 +200,86 @@ export const mockProvider: AiProvider = {
     return mockDistill(ctx);
   },
 
+  async distillApproved(ctx: ApprovedDistillContext): Promise<ApprovedDistilledCandidate[]> {
+    return mockDistillApproved(ctx);
+  },
+
+  async evaluateStandards(ctx: StandardEvaluationContext): Promise<StandardEvaluation> {
+    const issueEstimate = (standard: RuleStandard) => ctx.examples.reduce((sum, example) => {
+      const reply = `${example.replyContent} ${example.evaluationReport || ""}`;
+      const missing = standard.requiredItems.filter((item) => {
+        const core = item.replace(/情况|信息|内容|说明|相关|具体|完整|应当|应|需/g, "");
+        if (core.length >= 2 && reply.includes(core.slice(0, 6))) return false;
+        const semanticChecks: [RegExp, RegExp][] = [
+          [/联系|沟通/, /联系|沟通|致电/],
+          [/原因|核实/, /原因|核实|调查/],
+          [/措施|处理/, /措施|处理|办理|解决/],
+          [/结果|解决/, /结果|解决|完成|恢复/],
+          [/时间/, /\d{1,4}[年\-/月]\d{1,2}|\d{1,2}[时:：]/],
+          [/意见|满意/, /意见|满意|认可|接受/],
+          [/材料|佐证/, /材料|附件|图片|报告|佐证/],
+        ];
+        const matched = semanticChecks.filter(([signal]) => signal.test(item));
+        return matched.length > 0 && !matched.every(([, evidence]) => evidence.test(reply));
+      }).length;
+      return sum + missing;
+    }, 0);
+    const beforeIssues = issueEstimate(ctx.before);
+    const afterIssues = issueEstimate(ctx.after);
+    return {
+      orderType: ctx.orderType,
+      sampleCount: ctx.examples.length,
+      previousVersion: ctx.previousVersion,
+      currentVersion: ctx.currentVersion,
+      before: { passCount: Math.max(0, ctx.examples.length - beforeIssues), issueCount: beforeIssues },
+      after: { passCount: Math.max(0, ctx.examples.length - afterIssues), issueCount: afterIssues },
+    };
+  },
+
   async extractStandards(text: string): Promise<StandardExtractResult> {
     return mockExtractStandards(text);
   },
 };
+
+function mockDistillApproved(ctx: ApprovedDistillContext): ApprovedDistilledCandidate[] {
+  if (ctx.examples.length < 1) return [];
+  const ids = ctx.examples.slice(0, Math.min(5, ctx.examples.length)).map((e) => e.caseId);
+  const confidence = ctx.examples.length === 1 ? 0.55 : 0.78;
+  const replies = ctx.examples.map((e) => e.replyContent).join("\n");
+  const out: ApprovedDistilledCandidate[] = [];
+  if (/联系|沟通/.test(replies)) {
+    out.push({
+      kind: "reinforce",
+      candidateType: "required_item",
+      text: "合格回单应说明与市民联系沟通的时间、方式及核实情况。",
+      rationale: "多条已通过样本均包含联系沟通信息。",
+      supportingCaseIds: ids,
+      confidence,
+    });
+  }
+  if (/原因|经核实/.test(replies) && /处理|措施|解决/.test(replies)) {
+    out.push({
+      kind: "reinforce",
+      candidateType: "requirement",
+      text: "回单应完整说明核实过程、问题原因、处理措施和最终结果。",
+      rationale: "多条已通过样本均形成原因—措施—结果的办理闭环。",
+      supportingCaseIds: ids,
+      confidence: ctx.examples.length === 1 ? 0.58 : 0.8,
+    });
+  }
+  const reportIds = ctx.examples.filter((e) => e.evaluationReport?.trim()).map((e) => e.caseId);
+  if (reportIds.length >= 1) {
+    out.push({
+      kind: "exempt",
+      candidateType: "exemption",
+      text: "涉及不计入考核情形时，应以评价报告明确的适用条件及佐证材料综合判定，不得仅凭回单表述直接豁免。",
+      rationale: "多条已通过样本附有不计入考核评价报告。",
+      supportingCaseIds: reportIds,
+      confidence: reportIds.length === 1 ? 0.52 : 0.72,
+    });
+  }
+  return out;
+}
 
 // --------------------------------------------------------------------------
 // Mock 规范抽取:确定性地按"文本里出现了哪些工单类型名"来产出规范骨架,
@@ -270,13 +354,15 @@ function mockDistill(ctx: DistillContext): DistilledCandidate[] {
     const supporting = feedback.filter(
       (f) => f.isFalsePositive && containsAny(f.falsePositiveNote ?? "", sig.kw)
     );
-    if (supporting.length >= 2) {
+    if (supporting.length >= 1) {
       out.push({
         kind: "exempt",
         text: sig.text,
-        rationale: `共 ${supporting.length} 条误判记录反复出现「${sig.kw[0]}」类情形,AI 过度报错。`,
+        rationale: supporting.length === 1
+          ? `单样本候选：该误判记录出现「${sig.kw[0]}」类情形，需人工确认是否具有通用性。`
+          : `共 ${supporting.length} 条误判记录反复出现「${sig.kw[0]}」类情形,AI 过度报错。`,
         supportingCaseIds: supporting.map((f) => f.caseId).filter((id): id is string => !!id),
-        confidence: 0.8,
+        confidence: supporting.length === 1 ? 0.55 : 0.8,
       });
     }
   }
@@ -287,14 +373,16 @@ function mockDistill(ctx: DistillContext): DistilledCandidate[] {
     const supporting = feedback.filter(
       (f) => !!f.finalOpinion && containsAny(f.finalOpinion, sig.kw)
     );
-    if (supporting.length >= 2) {
+    if (supporting.length >= 1) {
       out.push({
         kind: "reinforce",
         text: sig.text,
-        rationale: `共 ${supporting.length} 条人工意见反复补上「${sig.kw[0]}」相关要素,应固化为必审项。`,
+        rationale: supporting.length === 1
+          ? `单样本候选：该人工意见补充了「${sig.kw[0]}」相关要素，需人工确认是否固化。`
+          : `共 ${supporting.length} 条人工意见反复补上「${sig.kw[0]}」相关要素,应固化为必审项。`,
         supportingCaseIds: supporting.map((f) => f.caseId).filter((id): id is string => !!id),
         riskLevel: sig.riskLevel,
-        confidence: 0.78,
+        confidence: supporting.length === 1 ? 0.55 : 0.78,
       });
     }
   }

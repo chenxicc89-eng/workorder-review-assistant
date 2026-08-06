@@ -6,6 +6,8 @@ import {
   listLearnedRules,
   adoptLearnedRule,
   rejectLearnedRule,
+  listApprovedOrderTypes,
+  generateAllLearnedCandidates,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,9 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { HelpDialog } from "@/components/HelpDialog";
+import { ApprovedCaseImportCard } from "@/components/ApprovedCaseImportCard";
+import { MultiMaterialImportCard } from "@/components/MultiMaterialImportCard";
+import { ApprovedCaseLibraryCard } from "@/components/ApprovedCaseLibraryCard";
 import {
   Loader2,
   Sparkles,
@@ -49,21 +54,28 @@ function kindBadge(kind: LearnedRuleRecord["kind"]) {
 
 export function LearningPage() {
   const { toast } = useToast();
-  const [orderType, setOrderType] = React.useState<string>(ORDER_TYPES[0]);
+  const [orderType, setOrderType] = React.useState<string>("__all");
   const [rules, setRules] = React.useState<LearnedRuleRecord[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [generating, setGenerating] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [guideOpen, setGuideOpen] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
+  const [orderTypes, setOrderTypes] = React.useState<string[]>([...ORDER_TYPES]);
+
+  React.useEffect(() => {
+    listApprovedOrderTypes()
+      .then((types) => setOrderTypes(Array.from(new Set([...ORDER_TYPES, ...types]))))
+      .catch(() => undefined);
+  }, []);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
       // 只看 pending / adopted(rejected 不展示,避免噪音)
       const [pending, adopted] = await Promise.all([
-        listLearnedRules({ orderType, status: "pending" }),
-        listLearnedRules({ orderType, status: "adopted" }),
+        listLearnedRules({ orderType: orderType === "__all" ? undefined : orderType, status: "pending" }),
+        listLearnedRules({ orderType: orderType === "__all" ? undefined : orderType, status: "adopted" }),
       ]);
       setRules([...pending, ...adopted]);
     } catch (e) {
@@ -80,7 +92,9 @@ export function LearningPage() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const created = await generateLearnedCandidates(orderType);
+      const created = orderType === "__all"
+        ? await generateAllLearnedCandidates()
+        : await generateLearnedCandidates(orderType);
       if (created.length === 0) {
         toast("未发现新的可提炼准则(可能已提炼或反馈信号不足)。", "info");
       } else {
@@ -137,7 +151,8 @@ export function LearningPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ORDER_TYPES.map((t) => (
+                <SelectItem value="__all">全部类型</SelectItem>
+                {orderTypes.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
                   </SelectItem>
@@ -152,8 +167,8 @@ export function LearningPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-xs text-muted-foreground">
           <p>
-            从「{orderType}」的历史人工纠错(误判 / 人工改意见)中提炼可长期复用的审核准则。
-            <b className="text-foreground">加强准则</b>补 AI 漏报、<b className="text-foreground">豁免准则</b>止 AI 误报;
+            从「{orderType === "__all" ? "全部类型" : orderType}」的历史人工纠错和批量导入的已通过工单中提炼可长期复用的审核准则。
+            人工纠错用于校准误报漏报，已通过样本用于提炼必备要素、规范要求、豁免条件和标准正例；
             采纳后即写入生效规范、影响此后每一次审核,且不占用示例预算 —— 反馈由此被永久记住。
           </p>
 
@@ -193,23 +208,48 @@ export function LearningPage() {
               <div className="space-y-2 border-t px-3 py-2.5">
                 <ol className="ml-4 list-decimal space-y-1.5">
                   <li>
-                    <b className="text-foreground">日常纠正</b>:审核时点「标记误判」并填写错在哪,或直接修改审核意见后保存 —— 正常审核时随手做即可。
+                    <b className="text-foreground">准备资料</b>:日常审核时记录人工纠错，或在下方按模板批量导入已审核通过的工单。
                   </li>
                   <li>
-                    <b className="text-foreground">生成候选</b>:回到本页,选工单类型后点右上「生成候选准则」,系统把你反复出现的纠正归纳成候选规则。
+                    <b className="text-foreground">生成候选</b>:选择工单类型后点右上「生成候选准则」，系统分开分析纠错和已通过样本并归纳候选。
                   </li>
                   <li>
                     <b className="text-foreground">你来拍板</b>:看每条候选的理由与支撑案例数,点「采纳」即写入规范并从下一单起生效;不合适则「驳回」;已采纳的可「撤回」。
                   </li>
                 </ol>
                 <p className="rounded bg-primary/5 px-2.5 py-1.5 text-primary">
-                  系统绝不会自动改规则,一定是你点「采纳」才生效;只有<b>反复出现</b>的纠正才会被提炼。
+                  系统绝不会自动改规则，一定是你点「采纳」才生效；单条样本也可生成候选，但会以较低置信度提示人工谨慎确认。
                 </p>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
+
+      <ApprovedCaseImportCard
+        onImported={() => {
+          void load();
+          void listApprovedOrderTypes().then((types) =>
+            setOrderTypes(Array.from(new Set([...ORDER_TYPES, ...types])))
+          );
+        }}
+      />
+      <MultiMaterialImportCard
+        onImported={() => {
+          void load();
+          void listApprovedOrderTypes().then((types) =>
+            setOrderTypes(Array.from(new Set([...ORDER_TYPES, ...types])))
+          );
+        }}
+      />
+      <ApprovedCaseLibraryCard
+        onChanged={() => {
+          void load();
+          void listApprovedOrderTypes().then((types) =>
+            setOrderTypes(Array.from(new Set([...ORDER_TYPES, ...types])))
+          );
+        }}
+      />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
@@ -289,12 +329,24 @@ function RuleRow({
   onAdopt?: () => void;
   onReject: () => void;
 }) {
+  const typeLabels: Record<LearnedRuleRecord["candidateType"], string> = {
+    reinforce: "加强准则",
+    exemption: "豁免准则",
+    required_item: "必备要素",
+    requirement: "规范要求",
+    good_example: "标准正例",
+  };
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {kindBadge(rule.kind)}
+            <Badge variant="outline">{rule.orderType}</Badge>
+            <Badge variant="outline">{typeLabels[rule.candidateType]}</Badge>
+            <Badge variant="secondary">
+              {rule.sourceType === "approved_case" ? "已通过样本" : "人工纠错"}
+            </Badge>
             {rule.riskLevel && (
               <Badge
                 variant={rule.riskLevel === "高" ? "high" : rule.riskLevel === "中" ? "medium" : "low"}
@@ -307,13 +359,24 @@ function RuleRow({
             </span>
           </div>
           <p className="mt-1.5 text-sm text-foreground">{rule.text}</p>
+          {rule.conflictStatus !== "none" && (
+            <p className="mt-1 rounded bg-risk-high/10 px-2 py-1 text-xs text-risk-high">
+              {rule.conflictStatus === "duplicate" ? "疑似重复" : "疑似冲突"}：
+              {rule.conflictDetail || "请人工核对后处理"}
+            </p>
+          )}
           {rule.rationale && (
             <p className="mt-1 text-xs text-muted-foreground">依据:{rule.rationale}</p>
           )}
         </div>
         <div className="flex shrink-0 gap-1">
           {!adopted && onAdopt && (
-            <Button size="sm" onClick={onAdopt} disabled={busy}>
+            <Button
+              size="sm"
+              onClick={onAdopt}
+              disabled={busy || rule.conflictStatus !== "none"}
+              title={rule.conflictStatus !== "none" ? "重复或冲突候选不可直接采纳" : undefined}
+            >
               {busy ? <Loader2 className="animate-spin" /> : <Check />}
               采纳
             </Button>

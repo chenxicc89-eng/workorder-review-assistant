@@ -57,7 +57,25 @@ model StandardRule {
   enabled     Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  versions    StandardVersion[]
 
+  @@index([orderType])
+}
+
+/// 规范每次保存/导入/采纳学习规则时留下的不可变快照，用于差异和回滚。
+model StandardVersion {
+  id             String       @id @default(cuid())
+  standardRuleId String
+  standardRule   StandardRule @relation(fields: [standardRuleId], references: [id], onDelete: Cascade)
+  orderType      String
+  version        Int
+  snapshotJson   String
+  source         String       @default("manual")
+  note           String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([standardRuleId, version])
+  @@index([standardRuleId])
   @@index([orderType])
 }
 
@@ -83,10 +101,50 @@ model LearnedRule {
   supportingCaseIds String
   /// 同一批「生成候选」的批次标识
   sourceBatchId     String
+  /// "correction"(人工纠错)| "approved_case"(已通过样本)
+  sourceType        String    @default("correction")
+  /// "reinforce" | "exemption" | "required_item" | "requirement" | "good_example"
+  candidateType     String    @default("reinforce")
+  /// "none" | "duplicate" | "conflict"
+  conflictStatus    String    @default("none")
+  conflictDetail    String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   adoptedAt         DateTime?
 
   @@index([orderType])
   @@index([status])
+  @@index([sourceType])
+}
+
+/// 一次“已审核通过工单”的批量导入任务。
+model ImportBatch {
+  id            String         @id @default(cuid())
+  name          String
+  fileName      String?
+  totalRows     Int
+  importedRows  Int
+  rejectedRows  Int            @default(0)
+  createdAt     DateTime       @default(now())
+  approvedCases ApprovedCase[]
+}
+
+/// 已审核通过、可作为规范学习证据的正向样本。
+model ApprovedCase {
+  id               String      @id @default(cuid())
+  batchId          String
+  batch            ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  orderNo          String
+  orderType        String
+  citizenAppeal    String
+  replyContent     String
+  evaluationReport String?
+  unit             String?
+  sourceFile       String?
+  createdAt        DateTime    @default(now())
+
+  @@unique([batchId, orderNo])
+  @@index([orderType])
+  @@index([orderNo])
+  @@index([batchId])
 }

@@ -169,6 +169,24 @@ export function importStandards(standards: RuleStandard[]): Promise<StandardList
   });
 }
 
+export function listStandardVersions(id: string): Promise<import("./types").StandardVersionRecord[]> {
+  return request(`/api/standards/${id}/versions`);
+}
+
+export function rollbackStandardVersion(
+  versionId: string
+): Promise<StandardListItem> {
+  return request(`/api/standards/versions/${versionId}/rollback`, { method: "POST" });
+}
+
+export function evaluateStandardVersions(id: string): Promise<import("./types").StandardEvaluation> {
+  return request(
+    `/api/standards/${id}/evaluate`,
+    { method: "POST" },
+    { timeoutMs: 58_000, timeoutMessage: "规范评估超时，请减少样本后重试。" }
+  );
+}
+
 // ---- learning(学习中心 / Tier3)----
 /** 生成候选准则(触发离线蒸馏,可能较慢) */
 export function generateLearnedCandidates(orderType: string): Promise<LearnedRuleRecord[]> {
@@ -180,6 +198,15 @@ export function generateLearnedCandidates(orderType: string): Promise<LearnedRul
       timeoutMessage: "生成候选超时(蒸馏耗时较长),请稍后重试或减少该类型的历史反馈量。",
     }
   );
+}
+
+export async function generateAllLearnedCandidates(): Promise<LearnedRuleRecord[]> {
+  const types = await request<string[]>("/api/learning/source-types");
+  if (types.length === 0) throw new Error("暂无可用于生成候选的学习资料");
+  const created: LearnedRuleRecord[] = [];
+  // 逐类型、逐请求执行，避免多个模型调用挤在一个 serverless 请求中超时。
+  for (const type of types) created.push(...(await generateLearnedCandidates(type)));
+  return created;
 }
 
 export function listLearnedRules(query: {
@@ -199,6 +226,46 @@ export function adoptLearnedRule(id: string): Promise<LearnedRuleRecord> {
 
 export function rejectLearnedRule(id: string): Promise<LearnedRuleRecord> {
   return request<LearnedRuleRecord>(`/api/learning/rules/${id}/reject`, { method: "POST" });
+}
+
+export function importApprovedCases(payload: {
+  name: string;
+  fileName?: string;
+  rows: import("./types").ApprovedCaseInput[];
+}): Promise<{
+  batch: import("./types").ImportBatchRecord;
+  cases: import("./types").ApprovedCaseRecord[];
+}> {
+  return request("/api/learning/approved-cases/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listApprovedImportBatches(): Promise<import("./types").ImportBatchRecord[]> {
+  return request("/api/learning/approved-cases/batches");
+}
+
+export function listApprovedOrderTypes(): Promise<string[]> {
+  return request("/api/learning/approved-cases/order-types");
+}
+
+export function listApprovedCases(query: { orderType?: string; batchId?: string } = {}): Promise<
+  import("./types").ApprovedCaseRecord[]
+> {
+  const params = new URLSearchParams();
+  if (query.orderType) params.set("orderType", query.orderType);
+  if (query.batchId) params.set("batchId", query.batchId);
+  const qs = params.toString();
+  return request(`/api/learning/approved-cases${qs ? `?${qs}` : ""}`);
+}
+
+export function deleteApprovedCase(id: string): Promise<void> {
+  return request(`/api/learning/approved-cases/${id}`, { method: "DELETE" });
+}
+
+export function deleteApprovedImportBatch(id: string): Promise<void> {
+  return request(`/api/learning/approved-cases/batches/${id}`, { method: "DELETE" });
 }
 
 // ---- ocr ----

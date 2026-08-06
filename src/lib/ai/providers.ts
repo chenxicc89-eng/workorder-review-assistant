@@ -7,6 +7,9 @@ import type {
   OcrExtractResult,
   DistilledCandidate,
   StandardExtractResult,
+  ApprovedLearningExample,
+  ApprovedDistilledCandidate,
+  StandardEvaluation,
 } from "../types";
 
 export type { DistilledCandidate, StandardExtractResult } from "../types";
@@ -75,6 +78,21 @@ export interface DistillContext {
   existingStandard?: RuleStandard | null;
 }
 
+export interface ApprovedDistillContext {
+  orderType: string;
+  examples: ApprovedLearningExample[];
+  existingStandard?: RuleStandard | null;
+}
+
+export interface StandardEvaluationContext {
+  orderType: string;
+  previousVersion: number;
+  currentVersion: number;
+  before: RuleStandard;
+  after: RuleStandard;
+  examples: ApprovedLearningExample[];
+}
+
 /** 传给 provider 的上下文 */
 export interface AiReviewContext {
   input: WorkOrderInput;
@@ -106,6 +124,10 @@ export interface AiProvider {
    * 返回的候选不含 id/status,由 learningService 落库为 pending。
    */
   distill(ctx: DistillContext): Promise<DistilledCandidate[]>;
+  /** 从批量导入的已通过样本提炼必备要素、规范要求、豁免和正例候选。 */
+  distillApproved(ctx: ApprovedDistillContext): Promise<ApprovedDistilledCandidate[]>;
+  /** 用已通过样本作为基准，对比两个规范版本的误伤和问题检出数量。 */
+  evaluateStandards(ctx: StandardEvaluationContext): Promise<StandardEvaluation>;
   /**
    * 从模板文件(回单范例)解析出的文本中,反推出一个或多个工单类型的规范。
    * 由「规范库 → 从模板导入」手动触发,不在审核热路径上。抽取结果需人工预览确认后才入库。

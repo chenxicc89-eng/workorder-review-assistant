@@ -1,5 +1,7 @@
 import { prisma } from "../db";
-import type { RuleStandard } from "../../lib/types";
+import type { RuleStandard, StandardVersionRecord, StandardEvaluation } from "../../lib/types";
+import { getProvider } from "../../lib/ai/providers";
+import { listApprovedCases } from "./approvedCaseService";
 import { getDefaultStandard, DEFAULT_STANDARDS } from "../../lib/standards/defaultStandards";
 
 // ==========================================================================
@@ -98,30 +100,62 @@ export interface UpsertStandardInput {
   name: string;
   standard: RuleStandard;
   enabled?: boolean;
+  source?: "manual" | "template_import" | "learning" | "rollback";
+  note?: string;
 }
 
 /** 新增或更新规范 */
 export async function upsertStandard(input: UpsertStandardInput): Promise<StandardRow> {
   const contentJson = JSON.stringify(input.standard);
   if (input.id) {
-    const updated = await prisma.standardRule.update({
-      where: { id: input.id },
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.standardRule.update({
+        where: { id: input.id },
+        data: {
+          orderType: input.orderType,
+          name: input.name,
+          contentJson,
+          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+        },
+      });
+      const latest = await tx.standardVersion.findFirst({
+        where: { standardRuleId: row.id },
+        orderBy: { version: "desc" },
+      });
+      await tx.standardVersion.create({
+        data: {
+          standardRuleId: row.id,
+          orderType: input.orderType,
+          version: (latest?.version ?? 0) + 1,
+          snapshotJson: contentJson,
+          source: input.source ?? "manual",
+          note: input.note ?? null,
+        },
+      });
+      return row;
+    });
+    return rowToStandard(updated);
+  }
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.standardRule.create({
       data: {
         orderType: input.orderType,
         name: input.name,
         contentJson,
-        ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+        enabled: input.enabled ?? true,
       },
     });
-    return rowToStandard(updated);
-  }
-  const created = await prisma.standardRule.create({
-    data: {
-      orderType: input.orderType,
-      name: input.name,
-      contentJson,
-      enabled: input.enabled ?? true,
-    },
+    await tx.standardVersion.create({
+      data: {
+        standardRuleId: row.id,
+        orderType: input.orderType,
+        version: 1,
+        snapshotJson: contentJson,
+        source: input.source ?? "manual",
+        note: input.note ?? null,
+      },
+    });
+    return row;
   });
   return rowToStandard(created);
 }
@@ -147,6 +181,75 @@ export async function upsertStandardByOrderType(
     name,
     standard: normalized,
     enabled: true,
+    source: "template_import",
+  });
+}
+
+export async function listStandardVersions(standardRuleId: string): Promise<StandardVersionRecord[]> {
+  const rows = await prisma.standardVersion.findMany({
+    where: { standardRuleId },
+    orderBy: { version: "desc" },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    standardRuleId: row.standardRuleId,
+    orderType: row.orderType,
+    version: row.version,
+    standard: JSON.parse(row.snapshotJson) as RuleStandard,
+    source: row.source as StandardVersionRecord["source"],
+    note: row.note,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
+
+export async function rollbackStandardVersion(versionId: string): Promise<StandardRow> {
+  const version = await prisma.standardVersion.findUnique({
+    where: { id: versionId },
+    include: { standardRule: true },
+  });
+  if (!version) throw new Error("规范版本不存在");
+  const snapshot = JSON.parse(version.snapshotJson) as RuleStandard;
+  return upsertStandard({
+    id: version.standardRuleId,
+    orderType: version.orderType,
+    name: snapshot.name || version.standardRule.name,
+    standard: snapshot,
+    enabled: true,
+    source: "rollback",
+    note: `回滚自 V${version.version}`,
+  });
+}
+
+export async function evaluateLatestStandardVersions(
+  standardRuleId: string
+): Promise<StandardEvaluation> {
+  const versions = await prisma.standardVersion.findMany({
+    where: { standardRuleId },
+    orderBy: { version: "desc" },
+    take: 2,
+  });
+  if (versions.length < 2) throw new Error("至少需要两个规范版本才能评估");
+  const [current, previous] = versions;
+  const samples = (await listApprovedCases(current.orderType)).slice(0, 8);
+  if (samples.length < 2) throw new Error("该类型至少需要两条已通过工单才能评估");
+  const clip = (text: string | undefined) => {
+    const value = (text || "").trim();
+    return value.length > 800 ? value.slice(0, 800) + "…" : value;
+  };
+  const provider = await getProvider();
+  return provider.evaluateStandards({
+    orderType: current.orderType,
+    previousVersion: previous.version,
+    currentVersion: current.version,
+    before: JSON.parse(previous.snapshotJson) as RuleStandard,
+    after: JSON.parse(current.snapshotJson) as RuleStandard,
+    examples: samples.map((sample) => ({
+      caseId: sample.id,
+      orderNo: sample.orderNo,
+      citizenAppeal: clip(sample.citizenAppeal),
+      replyContent: clip(sample.replyContent),
+      evaluationReport: sample.evaluationReport ? clip(sample.evaluationReport) : undefined,
+    })),
   });
 }
 

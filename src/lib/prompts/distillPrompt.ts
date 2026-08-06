@@ -15,16 +15,16 @@ import type { RuleStandard } from "../types";
 export const DISTILL_SYSTEM_PROMPT = `你是12345工单审核系统的"规则提炼员"。你的任务是阅读一批【人工对 AI 审核的纠错记录】,从中归纳出可长期复用的审核准则。
 纠错来自两类信号:
 1. 人工把某条 AI 判定标记为【误判】(附"错在哪"说明)—— 说明 AI 在这类情形下过度报错,应提炼为「豁免准则(exempt)」:告诉审核以后遇到同类情形不要再报为问题。
-2. 人工【修改了 AI 的最终意见】—— 说明 AI 的口径/尺度需要对齐,若人工反复补上 AI 漏掉的要点,应提炼为「加强准则(reinforce)」:告诉审核以后必须审到该要点。
+2. 人工【修改了 AI 的最终意见】—— 说明 AI 的口径/尺度需要对齐,若人工补上 AI 漏掉的要点,应提炼为「加强准则(reinforce)」:告诉审核以后必须审到该要点。
 
 提炼原则(务必遵守):
-- 只归纳【反复出现】的教训。单条、一次性的纠错不构成常驻规则,宁可不提炼。
+- 允许单条纠错生成候选，但必须在理由中标注“单样本候选”，confidence 不得高于 0.6；多条重复信号可给出更高置信度。
 - 每条准则必须能独立读懂、可直接写进审核规范,用正式简洁的中文一句话表述,不要引用具体某个市民或订单号。
 - 明确区分 reinforce 与 exempt,不要混。
 - 若某教训在【当前生效规范】里已有等价表述,不要重复提炼(去重)。
 - 每条准则给出支撑它的案例序号(supportingIndexes,对应输入中每条纠错前的编号),以及 0~1 的置信度。
 - reinforce 准则可给出建议风险等级 riskLevel(高/中/低);exempt 可不给。
-- 宁缺毋滥:没有足够反复出现的信号时,返回空数组。
+- 没有明确可复用信号时返回空数组，不要为了产出数量而编造规则。
 
 只输出 JSON 对象,不要输出 Markdown 或解释。结构:
 {
@@ -32,7 +32,7 @@ export const DISTILL_SYSTEM_PROMPT = `你是12345工单审核系统的"规则提
     {
       "kind": "reinforce" | "exempt",
       "text": "准则正文(一句话)",
-      "rationale": "提炼理由(为什么这是反复出现的教训)",
+      "rationale": "提炼理由(单样本时需明确标注)",
       "supportingIndexes": [1, 3],
       "riskLevel": "高" | "中" | "低"(可选,仅 reinforce),
       "confidence": 0.0~1.0
@@ -91,9 +91,9 @@ ${formatExistingLearned(existingStandard)}
 ${formatFeedback(feedback)}
 
 要求:
-- 归纳【反复出现】的教训为 reinforce(加强)/ exempt(豁免)准则,单条一次性纠错不提炼。
+- 归纳教训为 reinforce(加强)/ exempt(豁免)准则；单条纠错也可提炼，但置信度不得高于 0.6。
 - 与"已有准则/规范"等价的不重复提炼。
 - 每条准则给出 supportingIndexes(对应上面纠错编号)、rationale、confidence;reinforce 可给 riskLevel。
-- 宁缺毋滥,没有足够信号就返回 {"candidates": []}。
+- 没有明确可复用信号就返回 {"candidates": []}。
 - 只输出 JSON 对象。`;
 }
