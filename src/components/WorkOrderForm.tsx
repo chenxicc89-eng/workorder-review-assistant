@@ -17,6 +17,8 @@ const EXAMPLE: WorkOrderInput = {
   replyContent:
     "【电力公司权属】【已联系】朝阳供电公司中央商务区供电服务中心工作人员隋师于2026年7月3日23时50分与市民联系;但市民电话保密无法联系。【已解决】主责单位:朝阳供电公司中央商务区供电服务中心。办理时间:2026年7月3日22时15分。经核实,因树砸线导致线路停电,采取临时检修的方式恢复供电。因市民信息保密无法核实具体停电时间。市民【未知意见】。",
   orderNo: "",
+  evaluationReport:
+    "朝阳供电公司关于热线-260703-070307案件不计入评价的情况说明。经核实，该事件属于不计入评价事项清单中的供电设施外力破坏情形，申请本案件不计入考核评价。相关附件：现场照片、处置记录。",
   attachmentNote: "",
   unit: "朝阳供电公司中央商务区供电服务中心",
   remark: "",
@@ -27,6 +29,7 @@ const EMPTY: WorkOrderInput = {
   orderType: "",
   citizenAppeal: "",
   replyContent: "",
+  evaluationReport: "",
   attachmentNote: "",
   unit: "",
   remark: "",
@@ -70,6 +73,7 @@ export function WorkOrderForm({ value, onChange, onSubmit, loading }: Props) {
       orderNo: r.orderNo || value.orderNo,
       citizenAppeal: r.citizenAppeal || value.citizenAppeal,
       replyContent: r.replyContent || value.replyContent,
+      evaluationReport: r.evaluationReport || value.evaluationReport,
       unit: r.unit || value.unit,
       attachmentNote: r.attachmentNote || value.attachmentNote,
     });
@@ -141,7 +145,7 @@ export function WorkOrderForm({ value, onChange, onSubmit, loading }: Props) {
 
         <div className="space-y-1.5">
           <Label htmlFor="appeal">
-            市民诉求 <span className="text-risk-high">*</span>
+            工单内容（市民诉求） <span className="text-risk-high">*</span>
             <span className="ml-1 font-normal text-muted-foreground">(识别后可校对)</span>
           </Label>
           <Textarea
@@ -164,6 +168,22 @@ export function WorkOrderForm({ value, onChange, onSubmit, loading }: Props) {
             placeholder="上传工单图片识别后自动填入,或在此粘贴承办单位回单内容原文…"
             value={value.replyContent}
             onChange={(e) => set("replyContent", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="evaluation-report">
+            不计入考核评价报告
+            <span className="ml-1 font-normal text-muted-foreground">
+              (可选；有报告时将作为独立材料一并审核)
+            </span>
+          </Label>
+          <Textarea
+            id="evaluation-report"
+            className="min-h-[150px]"
+            placeholder="上传报告图片识别后自动填入，或在此粘贴不计入考核评价报告原文…"
+            value={value.evaluationReport || ""}
+            onChange={(e) => set("evaluationReport", e.target.value)}
           />
         </div>
 

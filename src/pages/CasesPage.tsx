@@ -14,6 +14,7 @@ import {
 import { Badge, riskVariant, conclusionVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { IssueTable } from "@/components/IssueTable";
 import { ReviewOpinionBox } from "@/components/ReviewOpinionBox";
 import { useToast } from "@/components/ui/toast";
-import { Loader2, Search, Flag, X } from "lucide-react";
+import { Loader2, Search, Flag, FlagOff, Pencil, X } from "lucide-react";
 
 const ALL = "__all__";
 
@@ -34,6 +35,9 @@ export function CasesPage() {
   const [cases, setCases] = React.useState<WorkOrderCaseRecord[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [detail, setDetail] = React.useState<WorkOrderCaseRecord | null>(null);
+  const [falsePositiveTarget, setFalsePositiveTarget] = React.useState<WorkOrderCaseRecord | null>(null);
+  const [falsePositiveNote, setFalsePositiveNote] = React.useState("");
+  const [markingId, setMarkingId] = React.useState<string | null>(null);
 
   // 过滤条件
   const [orderType, setOrderType] = React.useState<string>(ALL);
@@ -64,28 +68,32 @@ export function CasesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderType, riskLevel, fpFilter]);
 
-  const markFalsePositive = async (rec: WorkOrderCaseRecord) => {
-    const willMark = !rec.isFalsePositive;
-    const patch: PatchCasePayload = { isFalsePositive: willMark };
-    if (willMark) {
-      // 标记时让用户写"错在哪";取消标记则清空说明。
-      const note = window.prompt(
-        "标记为误判。请简述你认为 AI 错在哪(可留空)。\n例:承办单位已在附件补充了处理时间,不应判为退回。",
-        rec.falsePositiveNote || ""
-      );
-      if (note === null) return; // 取消
-      patch.falsePositiveNote = note.trim();
-    } else {
-      patch.falsePositiveNote = "";
-    }
+  const applyFalsePositive = async (
+    rec: WorkOrderCaseRecord,
+    isFalsePositive: boolean,
+    note = ""
+  ) => {
+    const patch: PatchCasePayload = {
+      isFalsePositive,
+      falsePositiveNote: isFalsePositive ? note.trim() : "",
+    };
+    setMarkingId(rec.id);
     try {
       const updated = await patchCase(rec.id, patch);
       setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       if (detail?.id === updated.id) setDetail(updated);
       toast(updated.isFalsePositive ? "已标记为误判" : "已取消误判标记", "success");
+      setFalsePositiveTarget(null);
     } catch (e) {
       toast(`操作失败:${(e as Error).message}`, "error");
+    } finally {
+      setMarkingId(null);
     }
+  };
+
+  const markFalsePositive = (rec: WorkOrderCaseRecord) => {
+    setFalsePositiveTarget(rec);
+    setFalsePositiveNote(rec.falsePositiveNote || "");
   };
 
   return (
@@ -144,7 +152,7 @@ export function CasesPage() {
               <label className="mb-1 block text-xs text-muted-foreground">关键词</label>
               <div className="flex gap-2">
                 <Input
-                  placeholder="搜索诉求 / 回单 / 意见 / 单位…"
+                  placeholder="搜索诉求 / 回单 / 评价报告 / 意见 / 单位…"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && load()}
@@ -177,7 +185,7 @@ export function CasesPage() {
                     <TableHead>风险</TableHead>
                     <TableHead className="min-w-[16rem]">审核意见</TableHead>
                     <TableHead>状态</TableHead>
-                    <TableHead className="w-40 text-right">操作</TableHead>
+                    <TableHead className="w-56 text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -214,11 +222,13 @@ export function CasesPage() {
                           </Button>
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="outline"
                             onClick={() => markFalsePositive(c)}
-                            title="标记/取消误判"
+                            disabled={markingId === c.id}
+                            className={c.isFalsePositive ? "text-risk-high" : ""}
                           >
-                            <Flag />
+                            {markingId === c.id ? <Loader2 className="animate-spin" /> : c.isFalsePositive ? <Pencil /> : <Flag />}
+                            {c.isFalsePositive ? "查看/编辑误判" : "标记误判"}
                           </Button>
                         </div>
                       </TableCell>
@@ -231,7 +241,29 @@ export function CasesPage() {
         </CardContent>
       </Card>
 
-      {detail && <CaseDetailModal record={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <CaseDetailModal
+          record={detail}
+          onClose={() => setDetail(null)}
+          onToggleFalsePositive={() => markFalsePositive(detail)}
+          marking={markingId === detail.id}
+        />
+      )}
+      {falsePositiveTarget && (
+        <FalsePositiveDialog
+          record={falsePositiveTarget}
+          note={falsePositiveNote}
+          onNoteChange={setFalsePositiveNote}
+          saving={markingId === falsePositiveTarget.id}
+          onClose={() => setFalsePositiveTarget(null)}
+          onConfirm={() => void applyFalsePositive(falsePositiveTarget, true, falsePositiveNote)}
+          onUnmark={() => {
+            if (confirm("确认取消误判标记？取消后该案例不会再作为误判反馈参与学习。")) {
+              void applyFalsePositive(falsePositiveTarget, false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -240,9 +272,13 @@ export function CasesPage() {
 function CaseDetailModal({
   record,
   onClose,
+  onToggleFalsePositive,
+  marking,
 }: {
   record: WorkOrderCaseRecord;
   onClose: () => void;
+  onToggleFalsePositive: () => void;
+  marking: boolean;
 }) {
   const finalOpinion = record.finalOpinion || record.reviewOpinion;
   return (
@@ -261,9 +297,21 @@ function CaseDetailModal({
             <Badge variant={riskVariant(record.riskLevel)}>风险:{record.riskLevel}</Badge>
             {record.isFalsePositive && <Badge variant="high">误判</Badge>}
           </div>
-          <Button size="icon" variant="ghost" onClick={onClose} className="shrink-0">
-            <X />
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onToggleFalsePositive}
+              disabled={marking}
+              className={record.isFalsePositive ? "text-risk-high" : ""}
+            >
+              {marking ? <Loader2 className="animate-spin" /> : record.isFalsePositive ? <Pencil /> : <Flag />}
+              {record.isFalsePositive ? "查看/编辑误判" : "标记为误判"}
+            </Button>
+            <Button size="icon" variant="ghost" onClick={onClose}>
+              <X />
+            </Button>
+          </div>
         </div>
         <div className="max-h-[80vh] space-y-4 overflow-auto p-4 sm:max-h-[75vh]">
           <section className="grid gap-3 sm:grid-cols-2">
@@ -280,6 +328,9 @@ function CaseDetailModal({
           )}
           <Field label="市民诉求" value={record.citizenAppeal} block />
           <Field label="回单内容" value={record.replyContent} block />
+          {record.evaluationReport && (
+            <Field label="不计入考核评价报告" value={record.evaluationReport} block />
+          )}
 
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -293,6 +344,66 @@ function CaseDetailModal({
             <div className="mb-2 text-sm font-medium text-muted-foreground">问题明细</div>
             <IssueTable issues={record.issues} />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FalsePositiveDialog({
+  record,
+  note,
+  onNoteChange,
+  saving,
+  onClose,
+  onConfirm,
+  onUnmark,
+}: {
+  record: WorkOrderCaseRecord;
+  note: string;
+  onNoteChange: (value: string) => void;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  onUnmark: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-lg border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="flex items-center gap-2 font-semibold">
+            <Flag className="text-risk-high" />
+            {record.isFalsePositive ? "查看 / 编辑误判说明" : "标记为 AI 误判"}
+          </div>
+          <Button size="icon" variant="ghost" onClick={onClose} disabled={saving}><X /></Button>
+        </div>
+        <div className="space-y-3 p-4">
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            工单：{record.orderNo || "未填写编号"} · {record.orderType}
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">AI 错在哪里？</label>
+            <Textarea
+              className="min-h-32"
+              value={note}
+              onChange={(e) => onNoteChange(e.target.value)}
+              placeholder="例如：承办单位已在附件补充处理时间，不应判定为要素缺失。"
+              autoFocus
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">建议填写具体原因，这将帮助学习中心生成更准确的豁免准则。</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 border-t px-4 py-3">
+          {record.isFalsePositive && (
+            <Button variant="outline" onClick={onUnmark} disabled={saving} className="mr-auto text-risk-high">
+              <FlagOff /> 取消误判标记
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={saving}>取消</Button>
+          <Button onClick={onConfirm} disabled={saving}>
+            {saving ? <Loader2 className="animate-spin" /> : record.isFalsePositive ? <Pencil /> : <Flag />}
+            {record.isFalsePositive ? "保存误判说明" : "确认标记为误判"}
+          </Button>
         </div>
       </div>
     </div>

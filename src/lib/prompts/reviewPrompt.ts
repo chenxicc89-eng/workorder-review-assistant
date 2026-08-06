@@ -8,8 +8,8 @@ import type { CorrectionExample } from "../ai/providers";
 // 工单输入、本地规则命中结果、对应规范拼装为一段结构化 user 提示词。
 // ==========================================================================
 
-export const REVIEW_SYSTEM_PROMPT = `你是国家电网12345工单回单审核员,任务是根据市民诉求、承办单位回单内容、对应回单规范和本地规则检查结果,对回单进行预审。
-你的审核目标不是替承办单位重写回单,而是发现回单中可能不符合规范的地方,并生成审核意见。
+export const REVIEW_SYSTEM_PROMPT = `你是国家电网12345工单材料审核员,任务是根据市民诉求、承办单位回单内容、不计入考核评价报告、对应规范和本地规则检查结果进行预审。
+你的审核目标不是替承办单位重写材料,而是分别发现回单和评价报告中可能不符合规范的地方,并检查两份材料是否一致。
 请重点审核以下方面:
 1. 是否完整回应市民核心诉求;
 2. 是否存在只回应表面问题、未回应深层诉求的情况;
@@ -21,9 +21,17 @@ export const REVIEW_SYSTEM_PROMPT = `你是国家电网12345工单回单审核�
 8. 是否存在口语化、内部化、不正式表述;
 9. 是否需要补充佐证材料;
 10. 审核意见是否适合直接退回承办单位修改。
+若提供了不计入考核评价报告，还必须审核:
+11. 报告是否与本工单、市民诉求和回单直接对应，工单编号、单位、时间、事实和处理结果是否一致;
+12. 报告是否明确提出不计入考核评价的结论及具体申请原因;
+13. 报告引用的不计入事项、政策法规或规则依据是否具体，并能逻辑支撑申请结论;
+14. 调查处置、事实认定、申请理由、佐证材料之间是否形成完整证据链;
+15. 报告所列附件或佐证是否清楚，是否能支撑关键事实;
+16. 报告与回单在联系情况、调查过程、处置结果和市民反馈上是否矛盾。
+未提供评价报告时，不得凭空提出评价报告相关问题。
 请严格基于输入文本判断,不得编造事实。
 如果某项问题没有足够依据,请不要强行指出。
-如果发现问题,请引用回单或诉求中的原文作为依据。
+如果发现问题,请引用回单、评价报告或诉求中的原文作为依据。
 重要:描述问题时必须区分以下两种情况,措辞不得混用:
 - 回单【完全没有提及】某诉求或要素 —— 才可用"未回应""未提及""未说明"等表述;
 - 回单【已经提及或作出结论,但缺少核实过程、事实依据或处理细节】 —— 必须表述为"虽已说明……但缺少核实过程/事实支撑/处理细节",不得写成"未回应"或"未提及"。
@@ -64,6 +72,7 @@ Issue 字段包括:
 - evidence: string
 - analysis: string
 - requirement: string
+- target: "reply" | "evaluation_report" | "cross_material"
 审核意见 reviewOpinion 要使用正式、简洁、可直接复制给承办单位的语言,并且必须同时包含两部分:
 1. 存在的问题(逐条说明);
 2. 整改建议(即应如何补充、修改,可与各 Issue 的 requirement 对应)。
@@ -120,6 +129,7 @@ function formatOneCorrection(c: CorrectionExample, label: string): string {
     `${prefix}:`,
     `  市民诉求:${c.citizenAppeal || "(无)"}`,
     `  回单内容:${c.replyContent || "(无)"}`,
+    `  评价报告:${c.evaluationReport || "(无)"}`,
     `  AI当时判定:${c.aiConclusion} / 风险${c.aiRiskLevel}`,
   ];
   if (c.isFalsePositive) {
@@ -174,6 +184,9 @@ ${input.citizenAppeal || "(未填写)"}
 【回单内容】
 ${input.replyContent || "(未填写)"}
 
+【不计入考核评价报告】
+${input.evaluationReport || "(未提供，本次不审核评价报告)"}
+
 【附件说明】
 ${input.attachmentNote || "(无)"}
 
@@ -195,8 +208,9 @@ ${formatRuleFindings(ruleFindings)}
 要求:
 - 结合上述规范与规则命中结果,补充语义层面的问题(如是否回应核心诉求、事实是否清楚、措施是否具体等)。
 - 若「历史纠错案例」中有与本工单相似的情形,请对齐人工的判定尺度:人工认为是误判的问题不要再报,人工最终意见的表述口径应作为参照。
-- 每条问题必须引用回单或诉求中的原文作为 evidence。
+- 每条问题必须引用诉求、回单或评价报告中的原文作为 evidence。
+- 每条问题必须用 target 标明审核对象：回单问题为 reply，报告自身问题为 evaluation_report，两份材料相互矛盾为 cross_material。
 - reviewOpinion 必须既指出问题、又给出整改建议(承办单位应如何补充或修改),不能只列问题。
 - 只输出 JSON 对象,字段严格为 conclusion / riskLevel / summary / issues / reviewOpinion / confidence。
-- issues 中每项包含 weight / category / evidence / analysis / requirement。`;
+- issues 中每项包含 weight / category / evidence / analysis / requirement / target。`;
 }

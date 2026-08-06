@@ -3,7 +3,7 @@ import type { OcrExtractResult } from "@/lib/types";
 // ==========================================================================
 // 合并多路识别结果(图片走视觉、Office 走文本)为一条 OcrExtractResult。
 // 纯函数,前端用。
-//   - 文本字段(citizenAppeal/replyContent/rawText):按顺序拼接非空片段;
+//   - 文本字段(citizenAppeal/replyContent/evaluationReport/rawText):按顺序拼接非空片段;
 //   - 标量字段(orderType/orderNo/unit/attachmentNote):取先出现的非空值;
 //   - confidence:取较低值(更保守);
 //   - notes:合并去重。
@@ -30,6 +30,7 @@ export function mergeExtractResults(results: OcrExtractResult[]): OcrExtractResu
     orderNo: firstNonEmpty(list.map((r) => r.orderNo)),
     citizenAppeal: joinNonEmpty(list.map((r) => r.citizenAppeal)),
     replyContent: joinNonEmpty(list.map((r) => r.replyContent)),
+    evaluationReport: joinNonEmpty(list.map((r) => r.evaluationReport)),
     unit: firstNonEmpty(list.map((r) => r.unit)),
     attachmentNote: joinNonEmpty(list.map((r) => r.attachmentNote)),
     rawText: joinNonEmpty(list.map((r) => r.rawText)),

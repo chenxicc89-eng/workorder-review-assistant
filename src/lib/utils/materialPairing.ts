@@ -120,7 +120,11 @@ export async function recognizeAndPairMaterials(
     };
     group.files.push(file.name);
     group.value.orderNo ||= detectedOrderNo;
-    group.value.orderType ||= result?.orderType || "";
+    // OCR 的“其他”通常是无法判断时的兜底，不直接视为已确认类型，交给用户选择/填写。
+    const detectedOrderType = result?.orderType?.trim() || "";
+    if (detectedOrderType && detectedOrderType !== "其他") {
+      group.value.orderType ||= detectedOrderType;
+    }
     group.value.unit ||= result?.unit || undefined;
     if (recognized.kind === "report") {
       group.value.evaluationReport = [group.value.evaluationReport, recognized.raw]

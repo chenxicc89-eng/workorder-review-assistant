@@ -38,6 +38,7 @@ function toAiIssue(raw: RawIssue, idx: number): ReviewIssue {
     analysis: raw.analysis ?? "",
     requirement: raw.requirement ?? "",
     source: "ai",
+    target: raw.target ?? "reply",
   };
 }
 
@@ -54,12 +55,12 @@ function mergeIssues(ruleFindings: ReviewIssue[], aiIssues: ReviewIssue[]): Revi
 
   // 规则问题先入表(高风险默认保留)
   for (const r of ruleFindings) {
-    byCat.set(normCategory(r.category), { ...r });
+    byCat.set(`${r.target ?? "reply"}:${normCategory(r.category)}`, { ...r });
   }
 
   // AI 问题合并/补充
   for (const a of aiIssues) {
-    const key = normCategory(a.category);
+    const key = `${a.target ?? "reply"}:${normCategory(a.category)}`;
     const existing = byCat.get(key);
     if (!existing) {
       byCat.set(key, a);
@@ -79,6 +80,7 @@ function mergeIssues(ruleFindings: ReviewIssue[], aiIssues: ReviewIssue[]): Revi
       analysis,
       requirement: existing.requirement || a.requirement,
       source: "merged",
+      target: existing.target ?? a.target,
     });
   }
 

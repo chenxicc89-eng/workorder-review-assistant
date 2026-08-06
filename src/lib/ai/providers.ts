@@ -4,6 +4,7 @@ import type {
   RuleStandard,
   WorkOrderInput,
   ReviewIssue,
+  ReviewIssueTarget,
   OcrExtractResult,
   DistilledCandidate,
   StandardExtractResult,
@@ -29,6 +30,7 @@ export interface RawIssue {
   evidence: string;
   analysis: string;
   requirement: string;
+  target?: ReviewIssueTarget;
 }
 
 /** 大模型一轮审核/复核的原始输出结构 */
@@ -52,6 +54,8 @@ export interface CorrectionExample {
   citizenAppeal: string;
   /** 回单内容摘要(已截断) */
   replyContent: string;
+  /** 不计入考核评价报告摘要(有则参与纠错对齐) */
+  evaluationReport?: string;
   /** 当时 AI 给出的结论 / 风险(供对照) */
   aiConclusion: ReviewConclusion;
   aiRiskLevel: RiskLevel;

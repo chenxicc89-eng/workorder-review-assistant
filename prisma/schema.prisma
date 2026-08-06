@@ -27,6 +27,7 @@ model WorkOrderCase {
   orderType         String
   citizenAppeal     String
   replyContent      String
+  evaluationReport  String?
   attachmentNote    String?
   unit              String?
   remark            String?

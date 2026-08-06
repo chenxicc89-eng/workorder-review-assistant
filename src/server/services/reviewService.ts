@@ -89,6 +89,7 @@ function toCorrectionExample(c: WorkOrderCaseRecord): CorrectionExample {
   return {
     citizenAppeal: snippet(c.citizenAppeal),
     replyContent: snippet(c.replyContent),
+    evaluationReport: c.evaluationReport ? snippet(c.evaluationReport) : undefined,
     aiConclusion: c.conclusion,
     aiRiskLevel: c.riskLevel,
     finalOpinion: c.humanEdited ? c.finalOpinion?.trim() || undefined : undefined,
@@ -102,6 +103,7 @@ function correctionCost(ex: CorrectionExample): number {
   return (
     (ex.citizenAppeal?.length ?? 0) +
     (ex.replyContent?.length ?? 0) +
+    (ex.evaluationReport?.length ?? 0) +
     (ex.finalOpinion?.length ?? 0) +
     (ex.falsePositiveNote?.length ?? 0) +
     40 // 固定字段(结论/风险/标签)的粗略开销
@@ -146,7 +148,7 @@ const CROSS_TYPE_MIN_SIMILARITY = 0.12;
 
 /** 取一条案例用于相似度比对的文本(诉求+回单) */
 function caseText(c: WorkOrderCaseRecord): string {
-  return `${c.citizenAppeal || ""} ${c.replyContent || ""}`;
+  return `${c.citizenAppeal || ""} ${c.replyContent || ""} ${c.evaluationReport || ""}`;
 }
 /** 取一条案例的问题类目集合(用于类目重叠加权) */
 function caseCategories(c: WorkOrderCaseRecord): string[] {
@@ -166,7 +168,7 @@ function selectCrossTypeCorrections(
   seenKeys: Set<string>
 ): { ex: CorrectionExample; similarity: number; fromOrderType: string }[] {
   if (remainingBudget <= 0 || candidates.length === 0) return [];
-  const inputText = `${input.citizenAppeal || ""} ${input.replyContent || ""}`;
+  const inputText = `${input.citizenAppeal || ""} ${input.replyContent || ""} ${input.evaluationReport || ""}`;
   const inputCats = ruleFindings.map((f) => f.category).filter(Boolean);
 
   const scored = candidates

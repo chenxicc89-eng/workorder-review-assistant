@@ -208,7 +208,7 @@ export function OcrUploader({ onExtracted, visionAvailable = true, visionHint }:
           点击或拖拽上传(图片 / PDF / Word .docx / Excel .xlsx,可多个)
         </span>
         <span className="text-xs text-muted-foreground/70">
-          诉求主表放前面、回单/附件在后,识别更准
+          建议按工单内容、工单回复、评价报告的顺序上传，识别更准
         </span>
         <input
           ref={inputRef}

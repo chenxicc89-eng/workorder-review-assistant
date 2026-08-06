@@ -6,6 +6,8 @@ import {
   listLearningSourceTypes,
   listRules,
   rejectRule,
+  bulkAdoptRules,
+  bulkRejectRules,
   LearningError,
 } from "../services/learningService";
 import type { LearnedRuleStatus } from "../../lib/types";
@@ -16,12 +18,15 @@ import {
   listApprovedCases,
   deleteApprovedCase,
   deleteImportBatch,
+  updateApprovedCaseOrderType,
+  bulkUpdateApprovedCaseOrderType,
 } from "../services/approvedCaseService";
 
 // /api/learning —— 学习中心(Tier3:反馈 → 常驻规则)
 export const learningRouter = Router();
 
 const generateSchema = z.object({ orderType: z.string().min(1) });
+const bulkRuleSchema = z.object({ ids: z.array(z.string().trim().min(1)).min(1).max(500) });
 const approvedCaseSchema = z.object({
   orderNo: z.string().trim().min(1, "工单编号不能为空").max(200),
   orderType: z.string().trim().min(1, "工单类型不能为空").max(100),
@@ -101,6 +106,33 @@ learningRouter.delete("/approved-cases/:id", async (req, res) => {
   }
 });
 
+learningRouter.patch("/approved-cases/bulk-order-type", async (req, res) => {
+  const parsed = z.object({
+    ids: z.array(z.string().trim().min(1)).min(1).max(500),
+    orderType: z.string().trim().min(1).max(100),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "请选择工单并填写目标类型" });
+  try {
+    const updatedCount = await bulkUpdateApprovedCaseOrderType(
+      parsed.data.ids,
+      parsed.data.orderType
+    );
+    res.json({ updatedCount });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "批量修改工单类型失败" });
+  }
+});
+
+learningRouter.patch("/approved-cases/:id", async (req, res) => {
+  const parsed = z.object({ orderType: z.string().trim().min(1).max(100) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "请填写工单类型" });
+  try {
+    res.json(await updateApprovedCaseOrderType(req.params.id, parsed.data.orderType));
+  } catch (err) {
+    res.status(404).json({ error: (err as Error).message || "修改工单类型失败" });
+  }
+});
+
 // POST /api/learning/candidates —— 生成候选准则(触发离线蒸馏)
 learningRouter.post("/candidates", async (req, res) => {
   const parsed = generateSchema.safeParse(req.body);
@@ -133,6 +165,26 @@ learningRouter.get("/rules", async (req, res) => {
   } catch (err) {
     console.error("查询学习规则失败:", err);
     res.status(500).json({ error: "查询学习规则失败", message: (err as Error).message });
+  }
+});
+
+learningRouter.post("/rules/bulk-adopt", async (req, res) => {
+  const parsed = bulkRuleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "请至少选择一条候选准则" });
+  try {
+    res.json(await bulkAdoptRules(parsed.data.ids));
+  } catch (err) {
+    res.status(500).json({ error: "批量采纳失败", message: (err as Error).message });
+  }
+});
+
+learningRouter.post("/rules/bulk-reject", async (req, res) => {
+  const parsed = bulkRuleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "请至少选择一条候选准则" });
+  try {
+    res.json(await bulkRejectRules(parsed.data.ids));
+  } catch (err) {
+    res.status(500).json({ error: "批量驳回失败", message: (err as Error).message });
   }
 });
 

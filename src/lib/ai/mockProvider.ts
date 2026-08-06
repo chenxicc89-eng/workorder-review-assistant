@@ -108,6 +108,8 @@ const MOCK_OCR_RESULT: OcrExtractResult = {
   replyContent:
     "【电力公司权属】【已联系】朝阳供电公司中央商务区供电服务中心隋帅于2026年7月3日23时50分与市民联系;但市民电话保密无法联系。【已解决】主责单位:朝阳供电公司中央商务区供电服务中心,办理时间:2026年7月3日22时15分。主要措施:经核实,市民反映的停电原因为7月3日树砸线导致线路停电。市民反映的频繁停电问题,因市民信息保密无法核实具体停电时间。为了排除隐患,防止发生大面积停电,采取临时检修的方式恢复供电。给市民带来了不便,深表歉意。反馈情况:已解决市民诉求,现已恢复正常供电。市民【未知意见】。",
   unit: "朝阳供电公司中央商务区供电服务中心",
+  evaluationReport:
+    "朝阳供电公司关于热线-260703-070307案件不计入评价的情况说明。经核实，该事件属于不计入评价事项清单中的外力破坏情形，申请本案件不计入考核评价。相关附件：现场照片、处置记录。",
   attachmentNote: "附件1:现场检修照片;附件2:《中华人民共和国电力法》;附件3:《供电营业规则》。",
   rawText:
     "(Mock 模式未真正识别图片,此处为内置示例原文)12345热线转派【多户无电】工单编号:热线-260703-070307…",
@@ -141,6 +143,7 @@ export const mockProvider: AiProvider = {
       evidence: f.evidence,
       analysis: f.analysis,
       requirement: f.requirement,
+      target: f.target,
     }));
     const semantic = deriveSemanticIssues(ctx);
     const issues = [...fromRules, ...semantic];

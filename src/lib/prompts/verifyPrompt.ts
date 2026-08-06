@@ -16,7 +16,8 @@ export const VERIFY_SYSTEM_PROMPT = `你是12345工单回单复核员。请对�
 5. 审核结论是否过重或过轻;
 6. 审核意见是否正式、清楚、可执行;
 7. 措辞是否与回单原文一致:若回单其实已经提及或对某问题作出结论(如"经核实并非电表故障"),但上一轮却用"未回应""未提及"来描述,属于措辞与原文矛盾,必须改为"已作出结论但缺少核实过程/事实支撑"这类准确表述——不要删除该问题(缺依据仍是真实缺陷),只修正措辞。
-请基于原始市民诉求、回单内容、规范要求、本地规则命中结果和上一轮审核结果进行修正。
+8. 若提供了不计入考核评价报告，是否遗漏报告自身的完整性、依据和证据链问题，以及报告与回单之间的事实矛盾。
+请基于原始市民诉求、回单内容、不计入考核评价报告、规范要求、本地规则命中结果和上一轮审核结果进行修正。
 不得编造事实。
 如果上一轮指出的问题没有足够依据,应删除或降权。
 如果有明显遗漏,应补充。
@@ -33,7 +34,8 @@ Issue 字段包括:
 - category: string
 - evidence: string
 - analysis: string
-- requirement: string`;
+- requirement: string
+- target: "reply" | "evaluation_report" | "cross_material"`;
 
 /** 上一轮主审核结果的精简形态(仅复核需要的字段) */
 export interface PriorReview {
@@ -46,6 +48,7 @@ export interface PriorReview {
     evidence: string;
     analysis: string;
     requirement: string;
+    target?: "reply" | "evaluation_report" | "cross_material";
   }>;
   reviewOpinion: string;
   confidence: number;
@@ -75,6 +78,9 @@ ${input.citizenAppeal || "(未填写)"}
 【回单内容】
 ${input.replyContent || "(未填写)"}
 
+【不计入考核评价报告】
+${input.evaluationReport || "(未提供，本次不审核评价报告)"}
+
 【本地规则命中结果】
 ${formatRuleFindings(ruleFindings)}
 
@@ -82,7 +88,8 @@ ${formatRuleFindings(ruleFindings)}
 ${JSON.stringify(prior, null, 2)}
 
 复核要求:
-- 逐条核对上一轮 issues 的 evidence 是否确实来自诉求或回单原文;无依据的删除或降权。
+- 逐条核对上一轮 issues 的 evidence 是否确实来自诉求、回单或评价报告原文;无依据的删除或降权。
+- 检查 target 是否正确：回单问题用 reply，报告问题用 evaluation_report，跨材料矛盾用 cross_material。
 - 检查是否遗漏明显高风险问题(如联系情况矛盾、未回应核心诉求、"已解决"缺乏支撑),如有则补充。
 - 检查权重是否合理、结论是否过重或过轻。
 - 校准措辞:凡回单已提及或已作出结论的事项,evidence/analysis/reviewOpinion 一律不得用"未回应""未提及"描述,改用"已说明……但缺少核实过程/事实支撑"等与原文一致的表述;缺依据的问题保留,只修措辞。

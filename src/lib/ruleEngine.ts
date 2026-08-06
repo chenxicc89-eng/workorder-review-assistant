@@ -130,6 +130,7 @@ export function checkRules(input: WorkOrderInput): ReviewIssue[] {
   const issues: ReviewIssue[] = [];
   const appeal = input.citizenAppeal ?? "";
   const reply = input.replyContent ?? "";
+  const report = input.evaluationReport?.trim() ?? "";
   const orderType = input.orderType ?? "";
 
   // ---- 规则 1:联系情况前后矛盾(高)----
@@ -290,6 +291,49 @@ export function checkRules(input: WorkOrderInput): ReviewIssue[] {
           source: "rule",
         });
       }
+    }
+  }
+
+  // ---- 规则 8~10:不计入考核评价报告的基础完整性 ----
+  // 仅在用户确实提供报告时检查；没有报告并不代表工单本身不合格。
+  if (report) {
+    if (!containsAny(report, ["不计入评价", "不计入考核", "申请不计入", "不予评价"])) {
+      issues.push({
+        id: ruleId(8),
+        weight: "中",
+        category: "评价报告申请结论不明确",
+        evidence: report.slice(0, 120),
+        analysis: "评价报告未明确写出申请不计入考核评价的结论。",
+        requirement: "请在报告中明确本案件是否申请不计入考核评价，并写明对应申请事项。",
+        source: "rule",
+        target: "evaluation_report",
+      });
+    }
+
+    if (!containsAny(report, ["依据", "规定", "规则", "清单", "法律", "标准", "条例", "第" ])) {
+      issues.push({
+        id: ruleId(9),
+        weight: "中",
+        category: "评价报告依据不具体",
+        evidence: report.slice(0, 120),
+        analysis: "评价报告提出不计入评价申请，但未明确对应的政策、规则、事项清单或具体条款依据。",
+        requirement: "请补充不计入评价所依据的事项清单、政策法规或规则条款，并说明其与本案事实的对应关系。",
+        source: "rule",
+        target: "evaluation_report",
+      });
+    }
+
+    if (!containsAny(report, ["附件", "照片", "录音", "截图", "证明", "佐证", "处置记录"])) {
+      issues.push({
+        id: ruleId(10),
+        weight: "中",
+        category: "评价报告佐证材料不清",
+        evidence: report.slice(-120),
+        analysis: "评价报告未列明能够支撑调查事实和申请理由的附件或佐证材料。",
+        requirement: "请列明现场照片、联系记录、处置记录或其他佐证材料，并说明其支撑的关键事实。",
+        source: "rule",
+        target: "evaluation_report",
+      });
     }
   }
 

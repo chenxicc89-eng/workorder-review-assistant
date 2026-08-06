@@ -11,6 +11,7 @@ const inputSchema = z.object({
   orderType: z.string().optional().default(""),
   citizenAppeal: z.string().min(1, "市民诉求不能为空"),
   replyContent: z.string().min(1, "回单内容不能为空"),
+  evaluationReport: z.string().optional(),
   attachmentNote: z.string().optional(),
   unit: z.string().optional(),
   remark: z.string().optional(),

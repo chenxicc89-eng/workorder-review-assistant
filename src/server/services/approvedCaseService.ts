@@ -149,6 +149,59 @@ export async function deleteApprovedCase(id: string): Promise<void> {
   });
 }
 
+export async function updateApprovedCaseOrderType(
+  id: string,
+  orderType: string
+): Promise<ApprovedCaseRecord> {
+  const value = orderType.trim();
+  if (!value) throw new Error("工单类型不能为空");
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.approvedCase.findUnique({ where: { id } });
+    if (!row) throw new Error("已通过工单不存在");
+    if (row.orderType !== value) {
+      // 待审候选若仍引用旧分类样本，应清除引用并重新生成。
+      await detachCaseEvidence(tx, [id]);
+    }
+    return tx.approvedCase.update({ where: { id }, data: { orderType: value } });
+  });
+  return {
+    id: updated.id,
+    batchId: updated.batchId,
+    orderNo: updated.orderNo,
+    orderType: updated.orderType,
+    citizenAppeal: updated.citizenAppeal,
+    replyContent: updated.replyContent,
+    evaluationReport: updated.evaluationReport ?? undefined,
+    unit: updated.unit ?? undefined,
+    sourceFile: updated.sourceFile,
+    createdAt: updated.createdAt.toISOString(),
+  };
+}
+
+export async function bulkUpdateApprovedCaseOrderType(
+  ids: string[],
+  orderType: string
+): Promise<number> {
+  const value = orderType.trim();
+  const uniqueIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+  if (!value) throw new Error("工单类型不能为空");
+  if (!uniqueIds.length) throw new Error("请至少选择一条工单");
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.approvedCase.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, orderType: true },
+    });
+    if (rows.length !== uniqueIds.length) throw new Error("部分已通过工单不存在，请刷新后重试");
+    const changedIds = rows.filter((row) => row.orderType !== value).map((row) => row.id);
+    if (changedIds.length) await detachCaseEvidence(tx, changedIds);
+    const result = await tx.approvedCase.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: { orderType: value },
+    });
+    return result.count;
+  });
+}
+
 export async function deleteImportBatch(id: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const rows = await tx.approvedCase.findMany({ where: { batchId: id }, select: { id: true } });

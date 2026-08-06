@@ -24,6 +24,7 @@ type CaseRow = {
   orderType: string;
   citizenAppeal: string;
   replyContent: string;
+  evaluationReport: string | null;
   attachmentNote: string | null;
   unit: string | null;
   remark: string | null;
@@ -56,6 +57,7 @@ function rowToRecord(row: CaseRow): WorkOrderCaseRecord {
     orderType: row.orderType,
     citizenAppeal: row.citizenAppeal,
     replyContent: row.replyContent,
+    evaluationReport: row.evaluationReport,
     attachmentNote: row.attachmentNote,
     unit: row.unit,
     remark: row.remark,
@@ -90,6 +92,7 @@ export async function saveCase(payload: SaveCaseInput): Promise<WorkOrderCaseRec
       orderType: input.orderType,
       citizenAppeal: input.citizenAppeal,
       replyContent: input.replyContent,
+      evaluationReport: input.evaluationReport || null,
       attachmentNote: input.attachmentNote || null,
       unit: input.unit || null,
       remark: input.remark || null,
@@ -122,6 +125,7 @@ export async function listCases(query: CaseQuery): Promise<WorkOrderCaseRecord[]
     where.OR = [
       { citizenAppeal: { contains: kw } },
       { replyContent: { contains: kw } },
+      { evaluationReport: { contains: kw } },
       { reviewOpinion: { contains: kw } },
       { orderNo: { contains: kw } },
       { unit: { contains: kw } },

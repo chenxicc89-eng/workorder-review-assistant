@@ -228,6 +228,25 @@ export function rejectLearnedRule(id: string): Promise<LearnedRuleRecord> {
   return request<LearnedRuleRecord>(`/api/learning/rules/${id}/reject`, { method: "POST" });
 }
 
+export interface BulkLearnedRuleResult {
+  updated: LearnedRuleRecord[];
+  errors: { id: string; message: string }[];
+}
+
+export function bulkAdoptLearnedRules(ids: string[]): Promise<BulkLearnedRuleResult> {
+  return request("/api/learning/rules/bulk-adopt", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export function bulkRejectLearnedRules(ids: string[]): Promise<BulkLearnedRuleResult> {
+  return request("/api/learning/rules/bulk-reject", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export function importApprovedCases(payload: {
   name: string;
   fileName?: string;
@@ -266,6 +285,26 @@ export function deleteApprovedCase(id: string): Promise<void> {
 
 export function deleteApprovedImportBatch(id: string): Promise<void> {
   return request(`/api/learning/approved-cases/batches/${id}`, { method: "DELETE" });
+}
+
+export function updateApprovedCaseOrderType(
+  id: string,
+  orderType: string
+): Promise<import("./types").ApprovedCaseRecord> {
+  return request(`/api/learning/approved-cases/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ orderType }),
+  });
+}
+
+export function bulkUpdateApprovedCaseOrderType(
+  ids: string[],
+  orderType: string
+): Promise<{ updatedCount: number }> {
+  return request("/api/learning/approved-cases/bulk-order-type", {
+    method: "PATCH",
+    body: JSON.stringify({ ids, orderType }),
+  });
 }
 
 // ---- ocr ----

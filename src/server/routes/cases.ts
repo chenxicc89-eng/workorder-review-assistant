@@ -15,6 +15,7 @@ const saveSchema = z.object({
     orderType: z.string().optional().default("其他"),
     citizenAppeal: z.string().min(1),
     replyContent: z.string().min(1),
+    evaluationReport: z.string().optional(),
     attachmentNote: z.string().optional(),
     unit: z.string().optional(),
     remark: z.string().optional(),

@@ -379,3 +379,33 @@ export async function rejectRule(id: string): Promise<LearnedRuleRecord> {
   })) as LearnedRuleRow;
   return rowToRecord(updated);
 }
+
+export interface BulkRuleResult {
+  updated: LearnedRuleRecord[];
+  errors: { id: string; message: string }[];
+}
+
+async function runBulkRuleAction(
+  ids: string[],
+  action: (id: string) => Promise<LearnedRuleRecord>
+): Promise<BulkRuleResult> {
+  const uniqueIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+  const updated: LearnedRuleRecord[] = [];
+  const errors: { id: string; message: string }[] = [];
+  for (const id of uniqueIds) {
+    try {
+      updated.push(await action(id));
+    } catch (err) {
+      errors.push({ id, message: (err as Error).message || "操作失败" });
+    }
+  }
+  return { updated, errors };
+}
+
+export function bulkAdoptRules(ids: string[]): Promise<BulkRuleResult> {
+  return runBulkRuleAction(ids, adoptRule);
+}
+
+export function bulkRejectRules(ids: string[]): Promise<BulkRuleResult> {
+  return runBulkRuleAction(ids, rejectRule);
+}

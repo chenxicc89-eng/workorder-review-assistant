@@ -1,11 +1,13 @@
 import * as React from "react";
-import { ChevronDown, ChevronRight, Database, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Database, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import type { ApprovedCaseRecord, ImportBatchRecord } from "@/lib/types";
 import {
   deleteApprovedCase,
   deleteApprovedImportBatch,
   listApprovedCases,
   listApprovedImportBatches,
+  updateApprovedCaseOrderType,
+  bulkUpdateApprovedCaseOrderType,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
+import { Input } from "@/components/ui/input";
+import { ORDER_TYPES } from "@/lib/standards/defaultStandards";
 
 export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }) {
   const { toast } = useToast();
@@ -23,6 +27,11 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [deleting, setDeleting] = React.useState<string | null>(null);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editingType, setEditingType] = React.useState("");
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkType, setBulkType] = React.useState("");
+  const [bulkUpdating, setBulkUpdating] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -36,6 +45,8 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
       ]);
       setCases(caseRows);
       setBatches(batchRows);
+      const visibleIds = new Set(caseRows.map((row) => row.id));
+      setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => visibleIds.has(id))));
     } catch (e) {
       toast(`样本加载失败：${(e as Error).message}`, "error");
     } finally {
@@ -46,7 +57,7 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
   React.useEffect(() => { void load(); }, [load]);
 
   const types = React.useMemo(
-    () => Array.from(new Set(cases.map((item) => item.orderType))).sort(),
+    () => Array.from(new Set([...ORDER_TYPES, ...cases.map((item) => item.orderType)])).sort(),
     [cases]
   );
   const batchMap = React.useMemo(
@@ -84,6 +95,50 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
     } finally { setDeleting(null); }
   };
 
+  const saveType = async (item: ApprovedCaseRecord) => {
+    if (!editingType.trim()) return toast("请选择或填写工单类型", "error");
+    setDeleting(item.id);
+    try {
+      const updated = await updateApprovedCaseOrderType(item.id, editingType);
+      setCases((prev) => prev.map((row) => row.id === item.id ? updated : row));
+      setEditingId(null);
+      toast("工单类型已更新，请按新类型重新生成候选准则", "success");
+      onChanged();
+    } catch (e) {
+      toast(`修改失败：${(e as Error).message}`, "error");
+    } finally { setDeleting(null); }
+  };
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(cases.map((item) => item.id)) : new Set());
+  };
+
+  const saveBulkType = async () => {
+    if (!selectedIds.size) return toast("请先选择需要修改的工单", "error");
+    if (!bulkType.trim()) return toast("请选择或填写目标工单类型", "error");
+    setBulkUpdating(true);
+    try {
+      const result = await bulkUpdateApprovedCaseOrderType(Array.from(selectedIds), bulkType);
+      toast(`已将 ${result.updatedCount} 条工单修改为「${bulkType.trim()}」`, "success");
+      setSelectedIds(new Set());
+      setBulkType("");
+      await load();
+      onChanged();
+    } catch (e) {
+      toast(`批量修改失败：${(e as Error).message}`, "error");
+    } finally { setBulkUpdating(false); }
+  };
+
+  const allSelected = cases.length > 0 && cases.every((item) => selectedIds.has(item.id));
+
   return (
     <Card>
       <CardHeader className="flex-col gap-3 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between">
@@ -118,6 +173,25 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
         </div>
       </CardHeader>
       <CardContent>
+        <datalist id="library-order-type-options">
+          {types.map((type) => <option key={type} value={type} />)}
+        </datalist>
+        {selectedIds.size > 0 && (
+          <div className="mb-3 flex flex-col gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 sm:flex-row sm:items-center">
+            <span className="shrink-0 text-sm font-medium">已选择 {selectedIds.size} 条</span>
+            <Input
+              className="sm:max-w-xs"
+              list="library-order-type-options"
+              value={bulkType}
+              placeholder="选择已有类型或输入新类型"
+              onChange={(e) => setBulkType(e.target.value)}
+            />
+            <Button size="sm" onClick={() => void saveBulkType()} disabled={bulkUpdating}>
+              {bulkUpdating ? <Loader2 className="animate-spin" /> : <Check />} 批量修改类型
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>取消选择</Button>
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-muted-foreground" /></div>
         ) : cases.length === 0 ? (
@@ -126,6 +200,15 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
           <div className="max-h-[560px] overflow-auto rounded-md border">
             <Table>
               <TableHeader><TableRow>
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                    aria-label="全选当前列表"
+                    className="h-4 w-4 accent-primary"
+                  />
+                </TableHead>
                 <TableHead>工单编号</TableHead><TableHead>类型</TableHead><TableHead>资料</TableHead>
                 <TableHead>导入批次</TableHead><TableHead>导入时间</TableHead><TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
@@ -133,12 +216,43 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
                 const expanded = expandedId === item.id;
                 return <React.Fragment key={item.id}>
                   <TableRow>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={(e) => toggleOne(item.id, e.target.checked)}
+                        aria-label={`选择工单 ${item.orderNo}`}
+                        className="h-4 w-4 accent-primary"
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{item.orderNo}</TableCell>
-                    <TableCell>{item.orderType}</TableCell>
+                    <TableCell>
+                      {editingId === item.id ? (
+                        <Input
+                          className="min-w-36"
+                          list="library-order-type-options"
+                          value={editingType}
+                          placeholder="选择或输入新类型"
+                          onChange={(e) => setEditingType(e.target.value)}
+                        />
+                      ) : (
+                        <span className={item.orderType === "其他" ? "text-risk-medium" : ""}>{item.orderType}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">工单✓ 回单✓ 报告{item.evaluationReport ? "✓" : "—"}</TableCell>
                     <TableCell className="max-w-52 truncate text-xs">{batchMap.get(item.batchId)?.name || "—"}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{new Date(item.createdAt).toLocaleString()}</TableCell>
                     <TableCell><div className="flex justify-end gap-1">
+                      {editingId === item.id ? <>
+                        <Button size="sm" variant="ghost" onClick={() => void saveType(item)} disabled={deleting === item.id}>
+                          {deleting === item.id ? <Loader2 className="animate-spin" /> : <Check />} 保存
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X /> 取消</Button>
+                      </> : (
+                        <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditingType(item.orderType === "其他" ? "" : item.orderType); }}>
+                          <Pencil /> 改类型
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => setExpandedId(expanded ? null : item.id)}>
                         {expanded ? <ChevronDown /> : <ChevronRight />} {expanded ? "收起" : "查看"}
                       </Button>
@@ -148,7 +262,7 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
                     </div></TableCell>
                   </TableRow>
                   {expanded && <TableRow>
-                    <TableCell colSpan={6} className="bg-muted/20">
+                    <TableCell colSpan={7} className="bg-muted/20">
                       <div className="grid gap-3 lg:grid-cols-3">
                         <MaterialBlock title="工单内容" text={item.citizenAppeal} />
                         <MaterialBlock title="工单回复内容" text={item.replyContent} />

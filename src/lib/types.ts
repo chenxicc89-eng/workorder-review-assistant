@@ -10,6 +10,9 @@ export type ReviewConclusion = "通过" | "建议修改" | "建议退回";
 /** 问题来源:本地规则 / AI 语义 / 二者合并 */
 export type IssueSource = "rule" | "ai" | "merged";
 
+/** 问题针对的审核材料 */
+export type ReviewIssueTarget = "reply" | "evaluation_report" | "cross_material";
+
 /** 单条审核问题 */
 export interface ReviewIssue {
   id: string;
@@ -23,6 +26,8 @@ export interface ReviewIssue {
   /** 整改要求 */
   requirement: string;
   source: IssueSource;
+  /** 回单、评价报告，或两份材料之间的一致性问题 */
+  target?: ReviewIssueTarget;
 }
 
 /** 本次审核引用的单条历史反馈的摘要(用于让"学习"对用户可见) */
@@ -77,6 +82,7 @@ export interface WorkOrderInput {
   orderType: string;
   citizenAppeal: string;
   replyContent: string;
+  evaluationReport?: string;
   attachmentNote?: string;
   unit?: string;
   remark?: string;
@@ -89,6 +95,8 @@ export interface OcrExtractResult {
   orderNo?: string;
   citizenAppeal: string;
   replyContent: string;
+  /** 不计入考核评价报告/案件不计入评价情况说明 */
+  evaluationReport?: string;
   unit?: string;
   attachmentNote?: string;
   /** OCR 识别的完整原文(供人工核对/兜底) */
@@ -252,6 +260,7 @@ export interface WorkOrderCaseRecord {
   orderType: string;
   citizenAppeal: string;
   replyContent: string;
+  evaluationReport?: string | null;
   attachmentNote?: string | null;
   unit?: string | null;
   remark?: string | null;

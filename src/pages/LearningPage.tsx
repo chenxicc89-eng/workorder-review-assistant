@@ -8,6 +8,8 @@ import {
   rejectLearnedRule,
   listApprovedOrderTypes,
   generateAllLearnedCandidates,
+  bulkAdoptLearnedRules,
+  bulkRejectLearnedRules,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { HelpDialog } from "@/components/HelpDialog";
-import { ApprovedCaseImportCard } from "@/components/ApprovedCaseImportCard";
 import { MultiMaterialImportCard } from "@/components/MultiMaterialImportCard";
 import { ApprovedCaseLibraryCard } from "@/components/ApprovedCaseLibraryCard";
 import {
@@ -62,6 +63,8 @@ export function LearningPage() {
   const [guideOpen, setGuideOpen] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [orderTypes, setOrderTypes] = React.useState<string[]>([...ORDER_TYPES]);
+  const [selectedPendingIds, setSelectedPendingIds] = React.useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = React.useState<"adopt" | "reject" | null>(null);
 
   React.useEffect(() => {
     listApprovedOrderTypes()
@@ -78,6 +81,10 @@ export function LearningPage() {
         listLearnedRules({ orderType: orderType === "__all" ? undefined : orderType, status: "adopted" }),
       ]);
       setRules([...pending, ...adopted]);
+      const visibleIds = new Set(pending.map((rule) => rule.id));
+      setSelectedPendingIds((prev) =>
+        new Set(Array.from(prev).filter((id) => visibleIds.has(id)))
+      );
     } catch (e) {
       toast(`加载失败:${(e as Error).message}`, "error");
     } finally {
@@ -134,6 +141,37 @@ export function LearningPage() {
     }
   };
 
+  const togglePending = (id: string, checked: boolean) => {
+    setSelectedPendingIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllPending = (checked: boolean) => {
+    setSelectedPendingIds(checked ? new Set(pending.map((rule) => rule.id)) : new Set());
+  };
+
+  const handleBulkPending = async (action: "adopt" | "reject") => {
+    if (!selectedPendingIds.size) return toast("请先选择候选准则", "error");
+    setBulkBusy(action);
+    try {
+      const result = action === "adopt"
+        ? await bulkAdoptLearnedRules(Array.from(selectedPendingIds))
+        : await bulkRejectLearnedRules(Array.from(selectedPendingIds));
+      const verb = action === "adopt" ? "采纳" : "驳回";
+      const detail = result.errors.length
+        ? `；${result.errors.length} 条未处理：${result.errors[0].message}`
+        : "";
+      toast(`已${verb} ${result.updated.length} 条${detail}`, result.errors.length ? "info" : "success");
+      setSelectedPendingIds(new Set());
+      await load();
+    } catch (e) {
+      toast(`批量操作失败：${(e as Error).message}`, "error");
+    } finally { setBulkBusy(null); }
+  };
+
   const pending = rules.filter((r) => r.status === "pending");
   const adopted = rules.filter((r) => r.status === "adopted");
 
@@ -167,7 +205,7 @@ export function LearningPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-xs text-muted-foreground">
           <p>
-            从「{orderType === "__all" ? "全部类型" : orderType}」的历史人工纠错和批量导入的已通过工单中提炼可长期复用的审核准则。
+            从「{orderType === "__all" ? "全部类型" : orderType}」的历史人工纠错和多文件智能配对导入的已通过工单中提炼可长期复用的审核准则。
             人工纠错用于校准误报漏报，已通过样本用于提炼必备要素、规范要求、豁免条件和标准正例；
             采纳后即写入生效规范、影响此后每一次审核,且不占用示例预算 —— 反馈由此被永久记住。
           </p>
@@ -208,7 +246,7 @@ export function LearningPage() {
               <div className="space-y-2 border-t px-3 py-2.5">
                 <ol className="ml-4 list-decimal space-y-1.5">
                   <li>
-                    <b className="text-foreground">准备资料</b>:日常审核时记录人工纠错，或在下方按模板批量导入已审核通过的工单。
+                    <b className="text-foreground">准备资料</b>:日常审核时记录人工纠错，或在下方使用多文件智能配对导入已审核通过的工单。
                   </li>
                   <li>
                     <b className="text-foreground">生成候选</b>:选择工单类型后点右上「生成候选准则」，系统分开分析纠错和已通过样本并归纳候选。
@@ -226,14 +264,6 @@ export function LearningPage() {
         </CardContent>
       </Card>
 
-      <ApprovedCaseImportCard
-        onImported={() => {
-          void load();
-          void listApprovedOrderTypes().then((types) =>
-            setOrderTypes(Array.from(new Set([...ORDER_TYPES, ...types])))
-          );
-        }}
-      />
       <MultiMaterialImportCard
         onImported={() => {
           void load();
@@ -259,8 +289,19 @@ export function LearningPage() {
         <>
           {/* 待审候选 */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle className="text-base">待审候选({pending.length})</CardTitle>
+              {pending.length > 0 && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={pending.every((rule) => selectedPendingIds.has(rule.id))}
+                    onChange={(e) => toggleAllPending(e.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  全选
+                </label>
+              )}
             </CardHeader>
             <CardContent>
               {pending.length === 0 ? (
@@ -269,6 +310,18 @@ export function LearningPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {selectedPendingIds.size > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                      <span className="mr-auto text-sm font-medium">已选择 {selectedPendingIds.size} 条</span>
+                      <Button size="sm" onClick={() => void handleBulkPending("adopt")} disabled={bulkBusy !== null}>
+                        {bulkBusy === "adopt" ? <Loader2 className="animate-spin" /> : <Check />} 批量采纳
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => void handleBulkPending("reject")} disabled={bulkBusy !== null}>
+                        {bulkBusy === "reject" ? <Loader2 className="animate-spin" /> : <X />} 批量驳回
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSelectedPendingIds(new Set())} disabled={bulkBusy !== null}>取消选择</Button>
+                    </div>
+                  )}
                   {pending.map((r) => (
                     <RuleRow
                       key={r.id}
@@ -276,6 +329,9 @@ export function LearningPage() {
                       busy={busyId === r.id}
                       onAdopt={() => handleAdopt(r)}
                       onReject={() => handleReject(r, false)}
+                      selectable
+                      selected={selectedPendingIds.has(r.id)}
+                      onSelectedChange={(checked) => togglePending(r.id, checked)}
                     />
                   ))}
                 </div>
@@ -322,12 +378,18 @@ function RuleRow({
   busy,
   onAdopt,
   onReject,
+  selectable = false,
+  selected = false,
+  onSelectedChange,
 }: {
   rule: LearnedRuleRecord;
   adopted?: boolean;
   busy: boolean;
   onAdopt?: () => void;
   onReject: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectedChange?: (checked: boolean) => void;
 }) {
   const typeLabels: Record<LearnedRuleRecord["candidateType"], string> = {
     reinforce: "加强准则",
@@ -339,6 +401,15 @@ function RuleRow({
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-3">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => onSelectedChange?.(e.target.checked)}
+            aria-label={`选择候选准则 ${rule.text}`}
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {kindBadge(rule.kind)}

@@ -49,6 +49,7 @@ import {
 
 const VALID_RISK: RiskLevel[] = ["高", "中", "低"];
 const VALID_CONCLUSION: ReviewConclusion[] = ["通过", "建议修改", "建议退回"];
+const VALID_TARGET = ["reply", "evaluation_report", "cross_material"] as const;
 const VALID_KIND = ["reinforce", "exempt"] as const;
 const VALID_APPROVED_TYPE: LearnedCandidateType[] = [
   "required_item",
@@ -193,6 +194,7 @@ function normalizeOutput(raw: any): RawReviewOutput {
         evidence: String(it?.evidence ?? ""),
         analysis: String(it?.analysis ?? ""),
         requirement: String(it?.requirement ?? ""),
+        target: VALID_TARGET.includes(it?.target) ? it.target : "reply",
       }))
     : [];
   const summary = Array.isArray(raw?.summary) ? raw.summary.map((s: any) => String(s)) : [];
@@ -229,6 +231,7 @@ function normalizeOcr(raw: any): OcrExtractResult {
     orderNo: raw?.orderNo ? String(raw.orderNo) : "",
     citizenAppeal: String(raw?.citizenAppeal ?? ""),
     replyContent: String(raw?.replyContent ?? ""),
+    evaluationReport: String(raw?.evaluationReport ?? ""),
     unit: raw?.unit ? String(raw.unit) : "",
     attachmentNote: raw?.attachmentNote ? String(raw.attachmentNote) : "",
     rawText: String(raw?.rawText ?? ""),

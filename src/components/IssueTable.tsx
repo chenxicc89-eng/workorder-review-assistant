@@ -15,6 +15,12 @@ const SOURCE_LABEL: Record<ReviewIssue["source"], string> = {
   merged: "规则+AI",
 };
 
+const TARGET_LABEL = {
+  reply: "回单",
+  evaluation_report: "评价报告",
+  cross_material: "跨材料",
+} as const;
+
 export function IssueTable({ issues }: { issues: ReviewIssue[] }) {
   if (!issues.length) {
     return (
@@ -29,6 +35,7 @@ export function IssueTable({ issues }: { issues: ReviewIssue[] }) {
         <TableRow>
           <TableHead className="w-12">#</TableHead>
           <TableHead className="w-16">权重</TableHead>
+          <TableHead className="w-24">审核对象</TableHead>
           <TableHead className="min-w-[9rem]">问题分类</TableHead>
           <TableHead className="min-w-[12rem]">原文依据</TableHead>
           <TableHead className="min-w-[14rem]">问题分析</TableHead>
@@ -42,6 +49,9 @@ export function IssueTable({ issues }: { issues: ReviewIssue[] }) {
             <TableCell className="text-muted-foreground">{i + 1}</TableCell>
             <TableCell>
               <Badge variant={riskVariant(it.weight)}>{it.weight}</Badge>
+            </TableCell>
+            <TableCell>
+              <Badge variant="secondary">{TARGET_LABEL[it.target || "reply"]}</Badge>
             </TableCell>
             <TableCell className="font-medium">{it.category}</TableCell>
             <TableCell className="text-muted-foreground whitespace-pre-wrap">
