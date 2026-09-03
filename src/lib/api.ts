@@ -307,6 +307,13 @@ export function bulkUpdateApprovedCaseOrderType(
   });
 }
 
+export function bulkDeleteApprovedCases(ids: string[]): Promise<{ deletedCount: number }> {
+  return request("/api/learning/approved-cases/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
 // ---- ocr ----
 // 视觉模型推理慢,serverless 平台约 60s 超时;客户端设略短超时(58s)主动中止,
 // 给出可读提示,而不是干等到平台返回含糊的 504。

@@ -8,6 +8,7 @@ import {
   listApprovedImportBatches,
   updateApprovedCaseOrderType,
   bulkUpdateApprovedCaseOrderType,
+  bulkDeleteApprovedCases,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [bulkType, setBulkType] = React.useState("");
   const [bulkUpdating, setBulkUpdating] = React.useState(false);
+  const [bulkDeleting, setBulkDeleting] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -137,6 +139,24 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
     } finally { setBulkUpdating(false); }
   };
 
+  const removeSelected = async () => {
+    if (!selectedIds.size) return toast("请先选择需要删除的工单", "error");
+    const count = selectedIds.size;
+    if (!confirm(`确认删除选中的 ${count} 条已通过工单？\n\n删除后无法恢复，相关待审候选中的来源引用也会同步清理。`)) return;
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const result = await bulkDeleteApprovedCases(ids);
+      if (expandedId && selectedIds.has(expandedId)) setExpandedId(null);
+      setSelectedIds(new Set());
+      toast(`已删除 ${result.deletedCount} 条工单样本`, "success");
+      await load();
+      onChanged();
+    } catch (e) {
+      toast(`批量删除失败：${(e as Error).message}`, "error");
+    } finally { setBulkDeleting(false); }
+  };
+
   const allSelected = cases.length > 0 && cases.every((item) => selectedIds.has(item.id));
 
   return (
@@ -186,10 +206,13 @@ export function ApprovedCaseLibraryCard({ onChanged }: { onChanged: () => void }
               placeholder="选择已有类型或输入新类型"
               onChange={(e) => setBulkType(e.target.value)}
             />
-            <Button size="sm" onClick={() => void saveBulkType()} disabled={bulkUpdating}>
+            <Button size="sm" onClick={() => void saveBulkType()} disabled={bulkUpdating || bulkDeleting}>
               {bulkUpdating ? <Loader2 className="animate-spin" /> : <Check />} 批量修改类型
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>取消选择</Button>
+            <Button size="sm" variant="destructive" onClick={() => void removeSelected()} disabled={bulkUpdating || bulkDeleting}>
+              {bulkDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />} 批量删除
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())} disabled={bulkUpdating || bulkDeleting}>取消选择</Button>
           </div>
         )}
         {loading ? (

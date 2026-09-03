@@ -20,6 +20,7 @@ import {
   deleteImportBatch,
   updateApprovedCaseOrderType,
   bulkUpdateApprovedCaseOrderType,
+  bulkDeleteApprovedCases,
 } from "../services/approvedCaseService";
 
 // /api/learning —— 学习中心(Tier3:反馈 → 常驻规则)
@@ -120,6 +121,19 @@ learningRouter.patch("/approved-cases/bulk-order-type", async (req, res) => {
     res.json({ updatedCount });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message || "批量修改工单类型失败" });
+  }
+});
+
+learningRouter.post("/approved-cases/bulk-delete", async (req, res) => {
+  const parsed = z.object({
+    ids: z.array(z.string().trim().min(1)).min(1).max(500),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "请至少选择一条工单" });
+  try {
+    const deletedCount = await bulkDeleteApprovedCases(parsed.data.ids);
+    res.json({ deletedCount });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "批量删除工单失败" });
   }
 });
 

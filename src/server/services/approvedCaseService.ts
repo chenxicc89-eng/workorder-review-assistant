@@ -202,6 +202,38 @@ export async function bulkUpdateApprovedCaseOrderType(
   });
 }
 
+/** 批量删除样本，并同步清理候选引用及已经变空的导入批次。 */
+export async function bulkDeleteApprovedCases(ids: string[]): Promise<number> {
+  const uniqueIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+  if (!uniqueIds.length) throw new Error("请至少选择一条工单");
+
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.approvedCase.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, batchId: true },
+    });
+    if (rows.length !== uniqueIds.length) throw new Error("部分已通过工单不存在，请刷新后重试");
+
+    await detachCaseEvidence(tx, uniqueIds);
+    const result = await tx.approvedCase.deleteMany({ where: { id: { in: uniqueIds } } });
+
+    const batchIds = Array.from(new Set(rows.map((row) => row.batchId)));
+    for (const affectedBatchId of batchIds) {
+      const remaining = await tx.approvedCase.count({ where: { batchId: affectedBatchId } });
+      if (remaining === 0) {
+        await tx.importBatch.delete({ where: { id: affectedBatchId } });
+      } else {
+        await tx.importBatch.update({
+          where: { id: affectedBatchId },
+          data: { importedRows: remaining },
+        });
+      }
+    }
+
+    return result.count;
+  });
+}
+
 export async function deleteImportBatch(id: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const rows = await tx.approvedCase.findMany({ where: { batchId: id }, select: { id: true } });
