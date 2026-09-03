@@ -141,7 +141,7 @@ npm run preview   # 预览前端;后端用 npm start 启动
 2. **建表**:本地把这两个串填进 `.env`,执行 `npm run db:deploy`(等价 `prisma migrate deploy`)对云库建表。
    - 若还没有 migration 文件,先跑一次 `npm run db:migrate`(对着云库/本地 Postgres 生成迁移),再 `db:deploy`。
    - 规范库**无需 seed**,库为空时自动用内置默认;想预置可选 `npm run db:seed`。
-3. **推到 Git 并在 Vercel 导入项目**(Framework Preset 选 Other/Vite 均可,已有 `vercel.json` 指定构建，并会在构建前自动执行未应用的数据库迁移)。
+3. **推到 Git 并在 Vercel 导入项目**(Framework Preset 选 Other/Vite 均可,已有 `vercel.json` 指定构建)。数据库迁移不要放进 Vercel 构建命令，避免 Preview 环境缺少 `DIRECT_URL` 时阻断部署。
 4. **在 Vercel 项目 → Settings → Environment Variables** 里填:
    - `DATABASE_URL`、`DIRECT_URL`(上面两个串)
    - `AI_ENABLED=true`、`AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`
