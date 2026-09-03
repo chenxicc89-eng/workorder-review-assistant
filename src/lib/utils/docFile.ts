@@ -7,6 +7,16 @@
 
 const OFFICE_EXTS = [".docx", ".xlsx", ".xls"];
 
+export function isSpreadsheet(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".xlsx") ||
+    name.endsWith(".xls") ||
+    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    file.type === "application/vnd.ms-excel"
+  );
+}
+
 /** 是否为受支持的 Office 文档(按扩展名 + MIME 判断) */
 export function isOfficeDoc(file: File): boolean {
   const name = file.name.toLowerCase();

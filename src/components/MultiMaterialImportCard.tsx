@@ -96,7 +96,7 @@ export function MultiMaterialImportCard({ onImported }: { onImported: () => void
         <Button size="sm" variant="outline" onClick={() => setOpen((value) => !value)}>{open ? "收起" : "开始配对"}</Button>
       </CardHeader>
       {open && <CardContent className="space-y-3">
-        <p className="text-xs text-muted-foreground">支持 Word、Excel、PDF、图片。文件名建议包含同一工单编号，并标注“工单内容 / 回单 / 不计入考核报告”；系统优先按文内工单编号归并。</p>
+        <p className="text-xs text-muted-foreground">支持 Word、Excel、PDF、图片。Excel 台账会按“工单编号 / 受理内容 / 处理情况”等表头逐行读取，不受整表 10 万字符限制；其他资料按工单编号自动归并。</p>
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed p-5 text-sm hover:border-primary/50">
           <Upload /> 选择资料文件（最多{MAX_MATERIAL_FILES}个）
           <input className="hidden" type="file" multiple accept=".docx,.xlsx,.xls,.pdf,image/*" onChange={(e) => void addFiles(e.target.files)} />

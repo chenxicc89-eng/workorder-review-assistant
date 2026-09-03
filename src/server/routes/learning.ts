@@ -38,7 +38,7 @@ const approvedCaseSchema = z.object({
 const importApprovedSchema = z.object({
   name: z.string().trim().min(1).max(200),
   fileName: z.string().trim().max(300).optional(),
-  rows: z.array(approvedCaseSchema).min(1, "至少导入一条已通过工单").max(500),
+  rows: z.array(approvedCaseSchema).min(1, "至少导入一条已通过工单").max(2_000),
 });
 
 learningRouter.get("/source-types", async (_req, res) => {
